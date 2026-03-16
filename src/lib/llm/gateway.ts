@@ -48,7 +48,7 @@ export async function llmComplete(
   // Temperature ceiling 0.99: some providers (e.g. GLM) reject temperature >= 1.0.
   // max_tokens floor 10: some providers enforce a minimum token count.
   const safeTemperature = (typeof temperature === 'number' && !isNaN(temperature))
-    ? Math.max(0.01, Math.min(0.99, temperature))
+    ? Math.round(Math.max(0.01, Math.min(0.99, temperature)) * 100) / 100
     : 0.7;
   const safeMaxTokens = (typeof max_tokens === 'number' && !isNaN(max_tokens) && max_tokens > 0)
     ? Math.max(10, Math.floor(max_tokens))
@@ -112,7 +112,7 @@ export async function* llmStream(
   const rawTemp = options?.temperature ?? routing.temperature;
   const rawMaxTokens = options?.max_tokens ?? routing.max_tokens;
   const safeTemp = (typeof rawTemp === 'number' && !isNaN(rawTemp))
-    ? Math.max(0.01, Math.min(0.99, rawTemp))
+    ? Math.round(Math.max(0.01, Math.min(0.99, rawTemp)) * 100) / 100
     : 0.7;
   const safeMax = (typeof rawMaxTokens === 'number' && !isNaN(rawMaxTokens) && rawMaxTokens > 0)
     ? Math.max(10, Math.floor(rawMaxTokens))
