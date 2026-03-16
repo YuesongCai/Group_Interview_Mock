@@ -39,6 +39,14 @@ ${'='.repeat(50)}
 
 规则4：instruction必须告诉AI"你的发言不超过80字/4句话"
 
+规则5：每个instruction必须包含发言类型标签
+- [表达判断] — 说出你的结论，不问问题。适用于：dominant_leader, industry_insider, silent_observer
+- [反驳追问] — 质疑对方，但结尾必须是你自己的替代方案，不是开放性问题。适用于：analytical_challenger, quant_thinker
+- [整合收尾] — 综合前面讨论，给出方向，可选问句结尾。适用于：strategic_integrator
+- [提问推进] — 问一个关键问题（每人每3轮只能用1次）
+
+如果最近3条消息里已经有2条以问句结尾，禁止再给[提问推进]类型，必须用[表达判断]或[反驳追问]。
+
 ${'='.repeat(50)}
 
 你需要以JSON格式返回：
@@ -60,9 +68,10 @@ ${'='.repeat(50)}
 2. 每轮至少1人的instruction包含"质疑/追问/反驳"
 3. 不允许两个人都在"支持"或"延伸"——至少一个要challenge
 4. 如果前面有未回答的问题，第一个responder必须回答那个问题
-5. 如果已经3-4轮AI对话没有用户发言，instruction里加一句"最后留一个问题给在座的其他人"
-6. dominant_leader可以interrupt=true（抢话）
-7. 不要连续2轮选同一个人
+5. 每个instruction必须带发言类型标签（[表达判断]/[反驳追问]/[整合收尾]/[提问推进]），根据角色type选择
+6. 大部分instruction应该是[表达判断]或[反驳追问]，只有在需要用户入口时才用[提问推进]
+7. dominant_leader可以interrupt=true（抢话）
+8. 不要连续2轮选同一个人
 
 只返回JSON，不要其他内容。`;
 
@@ -100,7 +109,15 @@ export async function getOrchestratorDecision(
 
       // Append length constraint if not present
       if (!r.instruction.includes('80字') && !r.instruction.includes('4句') && !r.instruction.includes('短句')) {
-        r.instruction += ' 【发言不超过80字/4句短句，最后留一个问题或钩子】';
+        r.instruction += ' 不超过80字/4句短句。';
+      }
+
+      // Ensure speech type label is present
+      if (!r.instruction.includes('[表达判断]') && !r.instruction.includes('[反驳追问]') &&
+          !r.instruction.includes('[整合收尾]') && !r.instruction.includes('[提问推进]')) {
+        const archetype = participant.persona_card?.personality_type || '';
+        const speechType = getSpeechTypeForArchetype(archetype);
+        r.instruction = `${speechType} ${r.instruction}`;
       }
 
       return r;
@@ -121,12 +138,21 @@ export async function getOrchestratorDecision(
       }
     }
 
-    // Check if we need a user entry point
+    // Check if we need a user entry point — use speech type, not forced question
     const msgsSinceLastHuman = countMessagesSinceLastHuman(messages);
-    if (msgsSinceLastHuman >= 3 && decision.responders.length > 0) {
+    if (msgsSinceLastHuman >= 4 && decision.responders.length > 0) {
       const lastResponder = decision.responders[decision.responders.length - 1];
-      if (!lastResponder.instruction.includes('问题给') && !lastResponder.instruction.includes('钩子给')) {
-        lastResponder.instruction += ' 最后一句必须是一个开放性问题，自然地邀请其他人（包括真人候选人）加入讨论。';
+      // Only the last responder gets [提问推进], and only if recent messages aren't already question-heavy
+      const recentQuestions = messages.slice(-4).filter(m =>
+        m.content.includes('？') || m.content.includes('?')
+      ).length;
+      if (recentQuestions < 2) {
+        // Replace speech type with [提问推进] for user entry
+        lastResponder.instruction = lastResponder.instruction
+          .replace(/\[表达判断\]|\[反驳追问\]|\[整合收尾\]/, '[提问推进]');
+        if (!lastResponder.instruction.includes('[提问推进]')) {
+          lastResponder.instruction += ' [提问推进] 最后一句自然地留一个钩子给其他候选人。';
+        }
       }
     }
 
@@ -143,6 +169,18 @@ function countMessagesSinceLastHuman(messages: Message[]): number {
     count++;
   }
   return count;
+}
+
+function getSpeechTypeForArchetype(archetype: string): string {
+  switch (archetype) {
+    case 'dominant_leader': return '[表达判断]';
+    case 'analytical_challenger': return '[反驳追问]';
+    case 'industry_insider': return '[表达判断]';
+    case 'strategic_integrator': return '[整合收尾]';
+    case 'quant_thinker': return '[反驳追问]';
+    case 'silent_observer': return '[表达判断]';
+    default: return '[表达判断]';
+  }
 }
 
 function hasSpecificTarget(instruction: string): boolean {
@@ -164,19 +202,19 @@ function enhanceInstruction(
 
   switch (archetype) {
     case 'dominant_leader':
-      return `接过${targetName}说的"${targetContent}"，用你的框架重新组织，带向你要的方向。不超过80字/4句。`;
+      return `[表达判断] 接过${targetName}说的"${targetContent}"，用你的框架重新组织，给出你的结论。不超过80字/4句。`;
     case 'analytical_challenger':
-      return `追问${targetName}说的"${targetContent}"中的一个具体假设——这个成立吗？给出你的理由。不超过80字/4句。`;
+      return `[反驳追问] 追问${targetName}说的"${targetContent}"中的一个具体假设——给出你的理由和替代判断。不超过80字/4句。`;
     case 'industry_insider':
-      return `用你的行业经验反驳或验证${targetName}关于"${targetContent}"的判断。给出一个具体数据或案例结论。不超过80字/4句。`;
+      return `[表达判断] 用你的行业经验反驳或验证${targetName}关于"${targetContent}"的判断。给出一个具体数据或案例结论。不超过80字/4句。`;
     case 'strategic_integrator':
-      return `把${targetName}的观点和之前的讨论做整合——共识在哪？分歧在哪？提出更高一层的理解。不超过80字/4句。`;
+      return `[整合收尾] 把${targetName}的观点和之前的讨论做整合——共识在哪？分歧在哪？给出你的方向判断。不超过80字/4句。`;
     case 'quant_thinker':
-      return `对${targetName}的"${targetContent}"做量化追问——这个数怎么拆？ROI怎么算？不超过80字/4句。`;
+      return `[反驳追问] 对${targetName}的"${targetContent}"做量化质疑——给出你的数据拆解和结论。不超过80字/4句。`;
     case 'silent_observer':
-      return `指出关于"${targetContent}"的讨论中所有人忽略的一个矛盾或前提错误。不超过80字/4句。`;
+      return `[表达判断] 指出关于"${targetContent}"的讨论中所有人忽略的一个矛盾或前提错误。不超过80字/4句。`;
     default:
-      return `直接回应${targetName}的"${targetContent}"，加入你自己的判断。不超过80字/4句。`;
+      return `[表达判断] 直接回应${targetName}的"${targetContent}"，加入你自己的判断。不超过80字/4句。`;
   }
 }
 
@@ -192,14 +230,19 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
   const selected = pool.sort(() => Math.random() - 0.5).slice(0, count);
 
   const lastMessage = messages[messages.length - 1];
-  const needsUserHook = countMessagesSinceLastHuman(messages) >= 3;
+  const needsUserHook = countMessagesSinceLastHuman(messages) >= 4;
+  const recentQs = messages.slice(-4).filter(m =>
+    m.content.includes('？') || m.content.includes('?')
+  ).length;
 
   return {
     responders: selected.map((p, i) => {
-      const instruction = enhanceInstruction(messages, participants, p);
-      const hookSuffix = (needsUserHook && i === selected.length - 1)
-        ? ' 最后留一个开放性问题给其他候选人。'
-        : '';
+      let instruction = enhanceInstruction(messages, participants, p);
+      // Only add user hook if not already question-heavy
+      if (needsUserHook && i === selected.length - 1 && recentQs < 2) {
+        instruction = instruction.replace(/\[表达判断\]|\[反驳追问\]|\[整合收尾\]/, '[提问推进]');
+      }
+      const hookSuffix = '';
 
       return {
         participant_id: p.id,
@@ -329,8 +372,16 @@ function buildPrompt(
 
   // User entry point check
   const msgsSinceHuman = countMessagesSinceLastHuman(messages);
-  const userHookNote = msgsSinceHuman >= 3
-    ? `\n💡 【用户入口】已经${msgsSinceHuman}条AI对话没有用户发言了。最后一个responder的instruction里加"最后留一个开放性问题给其他候选人"。`
+  const userHookNote = msgsSinceHuman >= 4
+    ? `\n💡 【用户入口】已经${msgsSinceHuman}条AI对话没有用户发言了。最后一个responder用[提问推进]类型。`
+    : '';
+
+  // Question frequency tracking
+  const recentQuestionCount = messages.slice(-4).filter(m =>
+    m.content.includes('？') || m.content.includes('?')
+  ).length;
+  const questionOverload = recentQuestionCount >= 2
+    ? `\n🔴 【提问过多】最近${recentQuestionCount}条消息以问句结尾！所有instruction必须用[表达判断]或[反驳追问]，禁止[提问推进]！`
     : '';
 
   // Discussion progress tracking
@@ -344,15 +395,17 @@ ${participantInfo}
 
 【最近对话】
 ${transcript || '（暂无）'}
-${openIssueNote}${echoWarning}${userHookNote}
+${openIssueNote}${echoWarning}${userHookNote}${questionOverload}
 
 【第${discussionRound}轮应该做什么】${progressNote}
 
 【决定】选1-2人回应。instruction必须：
-1. 指定"回应谁说的什么"（必须引用前面某人的具体话）
-2. 指定方式（追问/反驳/量化/整合/纠正）
-3. 包含"不超过80字/4句"
-4. 至少1人要challenge/追问`;
+1. 以发言类型标签开头：[表达判断]/[反驳追问]/[整合收尾]/[提问推进]
+2. 指定"回应谁说的什么"（必须引用前面某人的具体话）
+3. 指定方式（追问/反驳/量化/整合/纠正）
+4. 包含"不超过80字/4句"
+5. 至少1人要challenge/追问
+6. 大部分用[表达判断]或[反驳追问]，[提问推进]每3-4轮最多1次`;
 }
 
 function findOpenIssue(messages: Message[]): string | null {
