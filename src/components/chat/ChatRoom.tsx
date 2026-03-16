@@ -7,6 +7,7 @@ import ParticipantList from './ParticipantList';
 import PersonaCardModal from './PersonaCardModal';
 import PhaseTimer from './PhaseTimer';
 import TopicSidebar from './TopicSidebar';
+import CoachingHints from './CoachingHints';
 import { useVoice } from '@/hooks/useVoice';
 import styles from './ChatRoom.module.css';
 
@@ -18,6 +19,11 @@ interface PersonaCard {
   knowledge_depth: string;
   speaking_style: string;
   bias_tendency: string;
+  cognitive_bias?: string;
+  verbal_habits?: string[];
+  strength_blindspot?: string;
+  weakness?: string;
+  cv_highlights?: string[];
 }
 
 interface ParticipantInfo {
@@ -502,6 +508,18 @@ export default function ChatRoom({
           typingParticipantIds={typingIds}
         />
       </div>
+
+      {/* Coaching hints */}
+      {!sessionEnded && (
+        <CoachingHints
+          phase={phase}
+          messageCount={messages.length}
+          userMessageCount={messages.filter(m => m.participant_type === 'human').length}
+          totalParticipants={participants.filter(p => p.type !== 'host').length}
+          elapsedMinutes={(Date.now() - startedAt) / 60000}
+          totalMinutes={config.duration_minutes}
+        />
+      )}
 
       {selectedPersona && (
         <PersonaCardModal

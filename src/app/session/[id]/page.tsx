@@ -12,6 +12,11 @@ interface PersonaCard {
   knowledge_depth: string;
   speaking_style: string;
   bias_tendency: string;
+  cognitive_bias?: string;
+  verbal_habits?: string[];
+  strength_blindspot?: string;
+  weakness?: string;
+  cv_highlights?: string[];
 }
 
 interface ParticipantInfo {

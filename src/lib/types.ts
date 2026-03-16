@@ -89,6 +89,12 @@ export interface PersonaCard {
   knowledge_depth: string;
   speaking_style: string;
   bias_tendency: string;
+  // Rich personality fields for natural conversation
+  cognitive_bias: string;      // e.g. "幸存者偏差 - 总拿成功案例说事"
+  verbal_habits: string[];     // e.g. ["先说结论再展开", "喜欢用'本质上'开头"]
+  strength_blindspot: string;  // e.g. "数据分析很强但忽略用户情感"
+  weakness: string;            // e.g. "容易在细节里迷失，忘记回归主线"
+  cv_highlights: string[];     // e.g. ["字节跳动2年广告投放经验", "操盘过月GMV 500万的项目"]
 }
 
 export interface Participant {

@@ -11,6 +11,11 @@ interface PersonaCard {
   knowledge_depth: string;
   speaking_style: string;
   bias_tendency: string;
+  cognitive_bias?: string;
+  verbal_habits?: string[];
+  strength_blindspot?: string;
+  weakness?: string;
+  cv_highlights?: string[];
 }
 
 interface PersonaCardModalProps {
@@ -78,6 +83,35 @@ export default function PersonaCardModal({ persona, avatarColor, onClose }: Pers
           <div className={styles.sectionTitle}>思维倾向</div>
           <p className={styles.sectionContent}>{persona.bias_tendency}</p>
         </div>
+
+        {persona.cv_highlights && persona.cv_highlights.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>核心经历</div>
+            <ul className={styles.highlightList}>
+              {persona.cv_highlights.map((h, i) => (
+                <li key={i} className={styles.sectionContent}>{h}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {persona.cognitive_bias && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>认知偏差</div>
+            <p className={styles.sectionContent}>{persona.cognitive_bias}</p>
+          </div>
+        )}
+
+        {persona.verbal_habits && persona.verbal_habits.length > 0 && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>口头禅</div>
+            <div className={styles.tagList}>
+              {persona.verbal_habits.map((h, i) => (
+                <span key={i} className={styles.tag}>&ldquo;{h}&rdquo;</span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className={styles.section}>
           <div className={styles.sectionTitle}>发言积极度</div>
