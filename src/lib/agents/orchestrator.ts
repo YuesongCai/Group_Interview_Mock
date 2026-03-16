@@ -18,49 +18,51 @@ export interface OrchestratorDecision {
   system_message?: string;
 }
 
-const SYSTEM_PROMPT = `你是一个群面模拟的导演（Orchestrator）。你控制的不是"轮流发言"，而是真实群面的混乱、碰撞和递进。
+const SYSTEM_PROMPT = `你是群面模拟的导演。你的工作是让讨论像真实群面一样：短句对话、有来有回、有碰撞。
 
-【核心原则 — 群面不是和谐讨论会】
-1. 每轮对话里至少要有一个"但是"或质疑
-2. 偶尔允许两个人在某个点上短暂僵持（2-3轮来回）
-3. 角色必须引用自己的背景说话
-4. dominant_leader要主动cue别人，但是控场不是真心想听
-5. silent_observer被cue后说的话要有信息增量
+${'='.repeat(50)}
+【最重要的规则 — 必须严格执行】
+${'='.repeat(50)}
 
-【讨论递进规则 — 每轮必须推进】
-第1轮：提出方向/假设
-第2轮：补充或质疑这个方向
-第3轮：在质疑基础上提出修正/数据/案例
-第4轮：整合或escalate（上升到更高层问题）
-第5轮：收拢结论或爆发分歧
+规则1：每个AI的instruction必须指定"回应谁的什么具体内容"
+❌ 错误："回应讨论，分享你的观点"
+✅ 正确："质疑陈思远说的'东南亚利润率更高'——追问供应链成本是否被低估"
 
-【AI对AI互动 — 极其重要】
-- AI之间必须互相回应，不是只回应真人
-- 一个AI可以质疑另一个AI的观点
-- 两个AI可以短暂争论（2-3轮）
-- dominant_leader会抢话、打断、"吸收"别人的点子
-- analytical_challenger会挑dominant_leader的漏洞
-- industry_insider会用经验"纠正"其他人
+规则2：前一轮提出的具体问题/分歧，这一轮必须有人正面回应，不能绕开
+❌ 错误：A提了个问题，B完全无视，开始说自己的新话题
+✅ 正确：A问"ROI怎么量"，B必须回应这个问题，然后才能延伸
 
-【禁止行为】
-- ❌ 不能A说完，B直接echo A然后加一句废话
-- ❌ 不能每个人都是友好合作状态
-- ❌ 不能说完一个人的观点后直接转移，没有追问或质疑
-- ❌ 不能所有人都在推进方案，没有人质疑假设
+规则3：每3-4轮AI对话后，必须有一个角色留下开放性问题给用户
+不是生硬的"XX你怎么看"，而是：
+"我这个判断是基于B端经验，你们有没有看过WEF自己的数据？成员参与度现在什么状态？"
+给用户一个"可以接、也可以不接"的钩子。
+
+规则4：instruction必须告诉AI"你的发言不超过80字/4句话"
+
+${'='.repeat(50)}
 
 你需要以JSON格式返回：
 {
   "responders": [
     {
       "participant_id": "ID",
-      "instruction": "具体指令（必须包含：回应谁、什么方式、用什么背景）",
-      "delay_ms": 1000-5000,
+      "instruction": "具体指令（必须包含：回应谁的什么话、用什么方式、字数限制）",
+      "delay_ms": 1000-3000,
       "is_interrupt": false
     }
   ],
   "phase_change": null,
   "system_message": null
 }
+
+【决策规则】
+1. 每轮1-2人回应
+2. 每轮至少1人的instruction包含"质疑/追问/反驳"
+3. 不允许两个人都在"支持"或"延伸"——至少一个要challenge
+4. 如果前面有未回答的问题，第一个responder必须回答那个问题
+5. 如果已经3-4轮AI对话没有用户发言，instruction里加一句"最后留一个问题给在座的其他人"
+6. dominant_leader可以interrupt=true（抢话）
+7. 不要连续2轮选同一个人
 
 只返回JSON，不要其他内容。`;
 
@@ -86,33 +88,45 @@ export async function getOrchestratorDecision(
     const cleaned = response.content.replace(/```json\n?|\n?```/g, '').trim();
     const decision = JSON.parse(cleaned) as OrchestratorDecision;
 
-    // Post-process: ensure instructions are specific enough
+    // Post-process all instructions
     decision.responders = decision.responders.map(r => {
       const participant = participants.find(p => p.id === r.participant_id);
       if (!participant) return r;
 
-      // If instruction is too vague, enhance it
-      if (r.instruction.length < 20 || !hasSpecificTarget(r.instruction)) {
-        const enhanced = enhanceInstruction(r, messages, participants, participant);
-        r.instruction = enhanced;
+      // Ensure instruction has a specific target
+      if (!hasSpecificTarget(r.instruction)) {
+        r.instruction = enhanceInstruction(messages, participants, participant);
       }
+
+      // Append length constraint if not present
+      if (!r.instruction.includes('80字') && !r.instruction.includes('4句') && !r.instruction.includes('短句')) {
+        r.instruction += ' 【发言不超过80字/4句短句，最后留一个问题或钩子】';
+      }
+
       return r;
     });
 
-    // Ensure at least one challenge exists in responders
+    // Ensure at least one challenge
     const hasChallenge = decision.responders.some(r =>
-      r.instruction.includes('质疑') || r.instruction.includes('challenge') ||
-      r.instruction.includes('但是') || r.instruction.includes('反驳')
+      /质疑|追问|反驳|但是|challenge|不对/.test(r.instruction)
     );
-    if (!hasChallenge && messages.length > 5 && decision.responders.length > 0) {
-      // Convert the last responder to a challenger
+    if (!hasChallenge && messages.length > 3 && decision.responders.length > 0) {
       const last = decision.responders[decision.responders.length - 1];
       const lastP = participants.find(p => p.id === last.participant_id);
       if (lastP) {
-        const recentSpeaker = messages.slice(-3).find(m => m.participant_name !== lastP.display_name);
-        if (recentSpeaker) {
-          last.instruction = `质疑${recentSpeaker.participant_name}刚才说的"${recentSpeaker.content.substring(0, 40)}"——指出其中一个假设或数据不够站得住脚的地方。用你的背景来论证。`;
+        const target = messages.slice(-3).find(m => m.participant_name !== lastP.display_name);
+        if (target) {
+          last.instruction = `追问${target.participant_name}："${target.content.substring(0, 40)}"中的一个具体假设——这个成立吗？用你的背景来反驳或追问。不超过80字/4句。`;
         }
+      }
+    }
+
+    // Check if we need a user entry point
+    const msgsSinceLastHuman = countMessagesSinceLastHuman(messages);
+    if (msgsSinceLastHuman >= 3 && decision.responders.length > 0) {
+      const lastResponder = decision.responders[decision.responders.length - 1];
+      if (!lastResponder.instruction.includes('问题给') && !lastResponder.instruction.includes('钩子给')) {
+        lastResponder.instruction += ' 最后一句必须是一个开放性问题，自然地邀请其他人（包括真人候选人）加入讨论。';
       }
     }
 
@@ -122,41 +136,47 @@ export async function getOrchestratorDecision(
   }
 }
 
+function countMessagesSinceLastHuman(messages: Message[]): number {
+  let count = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].participant_type === 'human') break;
+    count++;
+  }
+  return count;
+}
+
 function hasSpecificTarget(instruction: string): boolean {
-  // Check if instruction mentions a specific person or topic
-  return /回应|质疑|反驳|支持|延伸|打断|cue|整合|总结.*刚才/.test(instruction);
+  return /回应|质疑|反驳|追问|支持|延伸|打断|cue|整合|纠正|说的|提到/.test(instruction);
 }
 
 function enhanceInstruction(
-  responder: { participant_id: string; instruction: string },
   messages: Message[],
   participants: Participant[],
   participant: Participant
 ): string {
   const archetype = participant.persona_card?.personality_type;
-  const recent = messages.slice(-5);
-  const lastOther = recent.filter(m => m.participant_id !== participant.id).pop();
+  const lastOther = [...messages].reverse().find(m => m.participant_id !== participant.id);
 
-  if (!lastOther) return responder.instruction;
+  if (!lastOther) return '分享你的核心观点，不超过80字。';
 
   const targetName = lastOther.participant_name;
   const targetContent = lastOther.content.substring(0, 50);
 
   switch (archetype) {
     case 'dominant_leader':
-      return `"吸收"${targetName}刚才说的"${targetContent}"的核心观点，用你自己的框架重新组织，然后往下延伸。让讨论按你的节奏走。`;
+      return `接过${targetName}说的"${targetContent}"，用你的框架重新组织，带向你要的方向。不超过80字/4句。`;
     case 'analytical_challenger':
-      return `质疑${targetName}关于"${targetContent}"的一个具体假设。说"但是"然后指出漏洞。不要为了和谐而同意。`;
+      return `追问${targetName}说的"${targetContent}"中的一个具体假设——这个成立吗？给出你的理由。不超过80字/4句。`;
     case 'industry_insider':
-      return `用你的行业经验来回应${targetName}说的"${targetContent}"。如果你觉得对方理解有偏差，直接纠正。`;
+      return `用你的行业经验反驳或验证${targetName}关于"${targetContent}"的判断。给出一个具体数据或案例结论。不超过80字/4句。`;
     case 'strategic_integrator':
-      return `把${targetName}的观点和前面其他人的观点做整合。找到共识点，指出分歧，提出一个更高层的理解。`;
+      return `把${targetName}的观点和之前的讨论做整合——共识在哪？分歧在哪？提出更高一层的理解。不超过80字/4句。`;
     case 'quant_thinker':
-      return `对${targetName}的观点做量化分析。问"这个能拆成数字吗"或者自己算一笔账来验证/否定对方的方向。`;
+      return `对${targetName}的"${targetContent}"做量化追问——这个数怎么拆？ROI怎么算？不超过80字/4句。`;
     case 'silent_observer':
-      return `指出关于"${targetContent}"的讨论中，所有人都忽略的一个前提或矛盾。你的发言要有独立信息增量。`;
+      return `指出关于"${targetContent}"的讨论中所有人忽略的一个矛盾或前提错误。不超过80字/4句。`;
     default:
-      return `回应${targetName}的"${targetContent}"，加入你自己的视角和判断。`;
+      return `直接回应${targetName}的"${targetContent}"，加入你自己的判断。不超过80字/4句。`;
   }
 }
 
@@ -164,7 +184,6 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
   const aiParticipants = participants.filter(p => p.type === 'ai');
   if (aiParticipants.length === 0) return { responders: [] };
 
-  // Pick 1-2 responders, prioritize those who haven't spoken recently
   const recentSpeakers = new Set(messages.slice(-4).map(m => m.participant_id));
   const candidates = aiParticipants.filter(p => !recentSpeakers.has(p.id));
   const pool = candidates.length > 0 ? candidates : aiParticipants;
@@ -173,34 +192,27 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
   const selected = pool.sort(() => Math.random() - 0.5).slice(0, count);
 
   const lastMessage = messages[messages.length - 1];
-  const lastSpeaker = lastMessage?.participant_name || '前面的人';
-  const lastContent = lastMessage?.content?.substring(0, 50) || '';
+  const needsUserHook = countMessagesSinceLastHuman(messages) >= 3;
 
   return {
     responders: selected.map((p, i) => {
-      const archetype = p.persona_card?.personality_type;
-      let instruction: string;
-
-      if (i === 0 && archetype !== 'silent_observer') {
-        // First responder: directly respond to last speaker
-        instruction = `直接回应${lastSpeaker}关于"${lastContent}"的观点。根据你的性格类型（${archetype}），用你的方式回应——质疑/支持/延伸/纠正都可以。`;
-      } else {
-        // Second responder: build on or challenge
-        instruction = `在前面的讨论基础上，提供一个不同的角度或质疑一个被忽略的假设。用你的背景经验来说话。`;
-      }
+      const instruction = enhanceInstruction(messages, participants, p);
+      const hookSuffix = (needsUserHook && i === selected.length - 1)
+        ? ' 最后留一个开放性问题给其他候选人。'
+        : '';
 
       return {
         participant_id: p.id,
-        instruction,
-        delay_ms: 1000 + Math.random() * 3000,
-        is_interrupt: archetype === 'dominant_leader' && Math.random() > 0.7,
+        instruction: instruction + hookSuffix,
+        delay_ms: 800 + Math.random() * 2000,
+        is_interrupt: p.persona_card?.personality_type === 'dominant_leader' && Math.random() > 0.7,
       };
     }),
   };
 }
 
 /**
- * Generate opening phase instructions — TYPE-aware.
+ * Opening phase instructions — TYPE-aware.
  */
 export function getOpeningInstructions(
   participants: Participant[],
@@ -208,7 +220,6 @@ export function getOpeningInstructions(
 ): OrchestratorDecision {
   const aiParticipants = participants.filter(p => p.type === 'ai');
 
-  // Sort by aggressiveness — most aggressive speaks first (realistic: they'd grab the chance)
   const sorted = [...aiParticipants].sort((a, b) =>
     (b.persona_card?.aggressiveness || 0) - (a.persona_card?.aggressiveness || 0)
   );
@@ -220,31 +231,31 @@ export function getOpeningInstructions(
 
       switch (archetype) {
         case 'dominant_leader':
-          instruction = `你第一个抢开场。先定框架——"我觉得核心问题是X，我们可以分几步讨论"。用你的咨询思维切入"${topic.title}"。`;
+          instruction = `抢先开场。定框架——"核心问题是X，我建议分两步讨论"。不超过3句话/60字。`;
           break;
         case 'analytical_challenger':
-          instruction = `开场先提出一个关键假设需要验证，或者指出题目中一个需要厘清的前提。不急着给方案，先定义问题。`;
+          instruction = `指出题目中一个关键假设需要验证。不给方案，先追问前提。2-3句。`;
           break;
         case 'industry_insider':
-          instruction = `用你的行业经验切入"${topic.title}"。说"我之前做过类似的项目"然后给一个其他人不知道的insight。`;
+          instruction = `用行业经验给一个其他人不知道的insight。"我做过类似项目，有个坑是——"。2-3句。`;
           break;
         case 'strategic_integrator':
-          instruction = `简短说你的初步想法，但不急着展开。你在观察其他人的方向，等一下再做整合。`;
+          instruction = `简短说初步想法，不展开。在观察。1-2句。`;
           break;
         case 'quant_thinker':
-          instruction = `先抓住题目中的关键数据，做一个快速拆解。"我先确认一下基准数据"然后指出核心gap。`;
+          instruction = `抓住题目数据做快速拆解。"基准数据是X，gap是Y"。2句。`;
           break;
         case 'silent_observer':
-          instruction = `简短说一两句你注意到的一个点，不展开。你在观察，等大家说完再做深入发言。`;
+          instruction = `说一句你注意到的点，不展开。1句。`;
           break;
         default:
-          instruction = `分享你对"${topic.title}"的初步想法，用你最擅长的角度切入。`;
+          instruction = `分享初步想法。2-3句。`;
       }
 
       return {
         participant_id: p.id,
         instruction,
-        delay_ms: i === 0 ? 2000 : 3000 + i * 3000, // Most aggressive gets shortest delay
+        delay_ms: i === 0 ? 1500 : 2500 + i * 2500,
         is_interrupt: false,
       };
     }),
@@ -282,79 +293,96 @@ function buildPrompt(
   currentPhase: SessionPhase,
   elapsedMinutes: number
 ): string {
-  const recentMessages = messages.slice(-15);
+  const recentMessages = messages.slice(-12);
   const transcript = recentMessages
     .map(m => {
-      const pType = m.participant_type === 'human' ? '【真人候选人】' : '';
+      const pType = m.participant_type === 'human' ? '【真人】' : '';
       return `${pType}${m.participant_name}: ${m.content}`;
     })
     .join('\n');
 
   const participantInfo = participants
     .map(p => {
-      if (p.type === 'human') {
-        return `- ${p.display_name} (真人候选人)`;
-      }
+      if (p.type === 'human') return `- ${p.display_name} (真人)`;
       const persona = p.persona_card;
       const msgCount = messages.filter(m => m.participant_id === p.id).length;
-      const typeLabel = persona?.personality_type || 'unknown';
-      const tendency = persona?.behavioral_tendency || '';
-      return `- ${p.display_name} [ID: ${p.id}] (TYPE: ${typeLabel}, 倾向: ${tendency}, 攻击性: ${persona?.aggressiveness}, 已发言${msgCount}次)`;
+      return `- ${p.display_name} [${p.id}] (${persona?.personality_type}, ${msgCount}次)`;
     })
     .join('\n');
 
   const timeRemaining = config.duration_minutes - elapsedMinutes;
 
-  // Find who spoke last and what they said
-  const lastMsg = recentMessages[recentMessages.length - 1];
-  const lastSpeaker = lastMsg ? `${lastMsg.participant_name}: "${lastMsg.content.substring(0, 60)}"` : '(无)';
-
-  // Detect dynamics
-  const lastFew = messages.slice(-5).map(m => m.content);
-  const echoWarning = lastFew.length >= 4 &&
-    lastFew.every(c => c.includes('同意') || c.includes('对') || c.includes('没错') || c.includes('是的'))
-    ? '\n⚠️ 【回音壁警告】最近大家都在互相同意！必须安排一个challenge或反驳来打破！'
+  // Find unresolved question/disagreement
+  const openIssue = findOpenIssue(recentMessages);
+  const openIssueNote = openIssue
+    ? `\n🔴 【未解决的问题】${openIssue}\n→ 这一轮第一个responder必须正面回应这个问题，不能跳过！`
     : '';
 
-  // Check for standoff opportunity (two people disagreeing)
-  const lastTwo = messages.slice(-2);
-  const isDisagreement = lastTwo.length === 2 &&
-    (lastTwo[1].content.includes('但是') || lastTwo[1].content.includes('不是') || lastTwo[1].content.includes('问题是'));
-  const standoffHint = isDisagreement
-    ? `\n🔥 【对峙机会】${lastTwo[0].participant_name}和${lastTwo[1].participant_name}在争论——可以让他们继续2-3轮，或者安排integrator出来整合`
+  // Echo chamber detection
+  const lastFew = messages.slice(-4).map(m => m.content);
+  const allAgreeing = lastFew.length >= 3 && lastFew.every(c =>
+    c.includes('同意') || c.includes('认同') || c.includes('对') || c.includes('没错') || c.includes('是的')
+  );
+  const echoWarning = allAgreeing
+    ? '\n⚠️ 【回音壁】大家都在互相同意！这一轮必须有人说"但是"！'
     : '';
 
-  // Who hasn't spoken recently
-  const recentSpeakers = new Set(messages.slice(-8).map(m => m.participant_id));
-  const quietOnes = participants
-    .filter(p => p.type === 'ai' && !recentSpeakers.has(p.id))
-    .map(p => `${p.display_name}(${p.persona_card?.personality_type})`);
-  const quietNote = quietOnes.length > 0
-    ? `\n沉默较久的: ${quietOnes.join('、')}`
+  // User entry point check
+  const msgsSinceHuman = countMessagesSinceLastHuman(messages);
+  const userHookNote = msgsSinceHuman >= 3
+    ? `\n💡 【用户入口】已经${msgsSinceHuman}条AI对话没有用户发言了。最后一个responder的instruction里加"最后留一个开放性问题给其他候选人"。`
     : '';
 
-  return `【当前状态】
-阶段: ${currentPhase} | 已用: ${elapsedMinutes.toFixed(1)}分钟 | 剩余: ${timeRemaining.toFixed(1)}分钟
-话题: ${topic.title} | 总消息: ${messages.length}
+  // Discussion progress tracking
+  const discussionRound = Math.floor(messages.filter(m => m.phase === 'discussion').length / 3) + 1;
+  const progressNote = getProgressNote(discussionRound);
+
+  return `【状态】阶段:${currentPhase} | 已用:${elapsedMinutes.toFixed(0)}分 | 剩:${timeRemaining.toFixed(0)}分 | 第${discussionRound}轮
 
 【参与者】
 ${participantInfo}
-${quietNote}
-
-【最后发言】${lastSpeaker}
 
 【最近对话】
 ${transcript || '（暂无）'}
-${echoWarning}${standoffHint}
+${openIssueNote}${echoWarning}${userHookNote}
 
-【你需要决定】
-1. 谁回应？（1-2人。注意：他们可以互相回应，不只是回应真人）
-2. instruction必须具体：回应谁的什么观点，用什么方式（质疑/支持/延伸/纠正/吸收/整合）
-3. 要考虑角色间的化学反应：
-   - dominant_leader vs analytical_challenger = 冲突
-   - quant_thinker + analytical_challenger = 联盟
-   - strategic_integrator → cue silent_observer = 协作
-   - industry_insider vs analytical_challenger = 技术争论
-4. 允许interrupt=true当dominant_leader或industry_insider在抢话
-5. 如果刚才在争论，可以让他们继续对峙（但不超过3轮）`;
+【第${discussionRound}轮应该做什么】${progressNote}
+
+【决定】选1-2人回应。instruction必须：
+1. 指定"回应谁说的什么"（必须引用前面某人的具体话）
+2. 指定方式（追问/反驳/量化/整合/纠正）
+3. 包含"不超过80字/4句"
+4. 至少1人要challenge/追问`;
+}
+
+function findOpenIssue(messages: Message[]): string | null {
+  for (let i = messages.length - 1; i >= Math.max(0, messages.length - 6); i--) {
+    const msg = messages[i];
+    // Find unanswered questions
+    if (msg.content.includes('？') || msg.content.includes('?')) {
+      const laterMsgs = messages.slice(i + 1);
+      const directlyAnswered = laterMsgs.some(m =>
+        m.content.includes(msg.participant_name || '') ||
+        m.participant_name !== msg.participant_name
+      );
+      if (!directlyAnswered || i >= messages.length - 2) {
+        const q = msg.content.match(/[^。！？]*[？?]/);
+        return q ? `${msg.participant_name}问："${q[0]}"` : null;
+      }
+    }
+    // Find unresolved challenges
+    if (i === messages.length - 1 &&
+        (msg.content.includes('但是') || msg.content.includes('不对') || msg.content.includes('问题是'))) {
+      return `${msg.participant_name}提出质疑："${msg.content.substring(0, 50)}"——需要有人正面回应`;
+    }
+  }
+  return null;
+}
+
+function getProgressNote(round: number): string {
+  if (round <= 1) return '提出方向/假设。各人亮核心观点，不需要达成共识。';
+  if (round <= 2) return '补充或质疑。针对第1轮的方向进行追问和碰撞。';
+  if (round <= 3) return '深化。用数据/案例/经验来解决具体分歧。';
+  if (round <= 4) return '整合。综合前面的讨论，收拢方向。有人该做总结了。';
+  return '收尾。必须有人做最终整合，不能还在发散。';
 }

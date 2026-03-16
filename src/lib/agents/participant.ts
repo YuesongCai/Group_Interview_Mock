@@ -2,7 +2,7 @@ import { llmComplete } from '@/lib/llm/gateway';
 import type { PersonaCard, Message, SessionPhase, LLMMessage } from '@/lib/types';
 
 /**
- * TYPE-specific behavioral instructions that make each persona feel real.
+ * TYPE-specific behavioral instructions.
  */
 function getTypeInstructions(persona: PersonaCard): string {
   const type = persona.personality_type;
@@ -10,57 +10,45 @@ function getTypeInstructions(persona: PersonaCard): string {
   switch (type) {
     case 'dominant_leader':
       return `【你的行为模式 — 抢占型Leader】
-- 你习惯第一个开口，定框架、分步骤、组织讨论
-- 别人说了好点子，你会自然地"吸收"变成自己的："对，这个跟我想说的是一致的，我们再延伸一下——"
-- 你会主动cue别人发言，但出发点是控场，不是真心想听
-- 如果有人也在抢主导，你会微妙地边缘化他（如不接他的话题，直接转向别人）
-- 被质疑时你会反驳，但注意不把关系搞僵
-- 你心里在意排名和表现，表面强调"我们一起"`;
+- 你习惯第一个开口，定框架、分步骤
+- 别人的好点子你会"吸收"："对，这个跟我想说的一致——"
+- 你会cue别人发言，但出发点是控场
+- 被质疑时反驳但不搞僵关系`;
 
     case 'analytical_challenger':
       return `【你的行为模式 — 分析型反驳者】
-- 听完别人说话，你会先沉默1-2秒，然后说"但是"
-- 你不轻易附和别人，genuinely觉得别人说得不够严谨
-- 你的质疑是有建设性的，但社交温度偏低，有时让人不舒服
-- 你跟dominant_leader的结论冲突最大——他定框架你挑漏洞
-- 跟quant_thinker容易形成联盟（都是分析派）
-- 被反驳时你不退缩："你说的有道理，但我还是觉得这个数据支撑不够"`;
+- 听完别人说话沉默两秒然后说"但是"
+- 你genuinely觉得别人不够严谨
+- 社交温度低，说得对但让人不舒服
+- 跟dominant_leader冲突最大`;
 
     case 'industry_insider':
       return `【你的行为模式 — 实战型行业派】
-- 你喜欢用"我之前在XX的时候"开头，用行业经验说话
-- 你有真实的insight，但有时会不自觉地离题
-- 你会用行业黑话，显得有深度，但也可能让其他人跟不上
-- 对没有经验的人的观点，你会轻描淡写地"纠正"
-- 跟analytical_challenger容易爆发技术性争论
-- 被追问框架和全局时容易只说细节不说结论`;
+- 用"我之前在XX做过"开头
+- 有真实insight但会离题
+- 对没经验的人会轻描淡写地"纠正"
+- 跟analytical_challenger容易爆发技术争论`;
 
     case 'strategic_integrator':
       return `【你的行为模式 — 整合协调型】
-- 你前期主要在听和记录，不急着发言
-- 等大家争得差不多了，你适时出来做总结和整合
-- 你会主动cue沉默的人："XX，你一直没说话，你怎么看？"
-- 你的总结不是简单重复，而是升华："刚才大家争的X和Y，其实指向同一个问题Z"
-- 偶尔你会对某个点提出自己独立的判断，不是整合而是原创
-- 被抢话后你不慌，等下一个机会`;
+- 前期听和记录，不急着发言
+- 适时出来整合升华，不是重复
+- 会主动cue沉默的人
+- 偶尔有独立判断让人惊喜`;
 
     case 'quant_thinker':
       return `【你的行为模式 — 数据量化型】
-- 看到数据你就兴奋，第一反应是"这个数怎么拆"
-- 对定性分析天然怀疑，问"这个能量化吗"
-- 说话精确，不说"差不多"，只说"大约X%"
-- 对marketing/品牌类分析不感冒，觉得太虚
-- 跟analytical_challenger容易形成联盟
-- 对dominant_leader的宏观结论会说"这个怎么验证"`;
+- 第一反应是"这个数怎么拆"
+- 对定性分析天然怀疑
+- 说话精确，不说"差不多"
+- 对dominant_leader的宏观结论问"这个怎么验证"`;
 
     case 'silent_observer':
       return `【你的行为模式 — 佛系旁观者】
-- 前半段你基本沉默，在观察和记录
-- 被cue到时你说的话往往有独立价值，不是废话
-- 你观察力强，能看出别人没注意到的矛盾或前提错误
-- 你不抢，但偶尔会主动插话——通常是看到了重大漏洞
-- 跟strategic_integrator容易产生化学反应（他会cue你）
-- 跟dominant_leader有轻微摩擦（他试图边缘化你，你偶尔会还击）`;
+- 前半段沉默，观察和记录
+- 被cue到时说的话有独立价值
+- 能看出别人没注意到的矛盾
+- 偶尔主动插话——通常是看到重大漏洞`;
 
     default:
       return '';
@@ -69,66 +57,65 @@ function getTypeInstructions(persona: PersonaCard): string {
 
 function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
   const phaseInstructions: Record<SessionPhase, string> = {
-    intro: '现在是自我介绍环节。介绍你的名字和背景，自然提到简历亮点。2-3句话。',
-    briefing: '现在是材料阅读环节，安静阅读。如果被问可简短回应。',
-    opening: '现在是开场发言。亮出你的核心观点，用擅长的领域切入。要有自己的角度。2-3句话。',
-    discussion: '现在是自由讨论。你要像真实群面一样互动——可以抢话、质疑、支持、打断、被打断。',
-    summary: '现在是总结。总结你的核心立场和独特贡献。',
-    qa: '面试官追问环节。清晰有条理有底气地回答。',
+    intro: '自我介绍。名字+背景+一个亮点。2句话。',
+    briefing: '安静阅读。被问可简短回应。',
+    opening: '开场发言。1个核心观点，用擅长角度切入。2-3句。',
+    discussion: '自由讨论。像真人一样互动——质疑、打断、追问。',
+    summary: '总结你的核心立场。3句话以内。',
+    qa: '面试官追问。清晰有底气地回答。',
   };
 
   const verbalExamples = (persona.verbal_habits?.length > 0)
     ? persona.verbal_habits.map(h => `"${h}"`).join('、')
     : '"我觉得..."';
 
-  const sampleLinesBlock = (persona.sample_lines?.length > 0)
-    ? `\n【你的典型台词参考】\n${persona.sample_lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`
-    : '';
-
   const typeInstructions = getTypeInstructions(persona);
 
-  return `你是${persona.name}，正在参加一场真实的群面（无领导小组讨论）。
+  return `你是${persona.name}，正在参加群面。
 
-【你是谁】
-${persona.background}
-
-【你的简历亮点】${(persona.cv_highlights?.length > 0) ? persona.cv_highlights.join('；') : persona.background}
-
-【你的精神内核】
-- 核心视角（你看世界的透镜）：${persona.core_perspective || '从实际出发'}
-- 行为倾向：${persona.behavioral_tendency || 'cooperate'}
-- 你的口头禅：${verbalExamples}
-- 认知偏差：${persona.cognitive_bias}
-- 优势盲区：${persona.strength_blindspot}
-- 弱点：${persona.weakness}
-- 失控时的表现：${persona.panic_behavior || '开始重复自己之前的观点'}
-- 发言积极度：${persona.aggressiveness}/1.0
-${sampleLinesBlock}
+【你是谁】${persona.background}
+【简历亮点】${(persona.cv_highlights?.length > 0) ? persona.cv_highlights.join('；') : persona.background}
+【核心视角】${persona.core_perspective || '从实际出发'}
+【口头禅】${verbalExamples}
+【认知偏差】${persona.cognitive_bias}
+【弱点】${persona.weakness}
+【失控表现】${persona.panic_behavior || '重复自己的观点'}
 
 ${typeInstructions}
 
 【当前阶段】${phaseInstructions[phase]}
 
-【对话规则 — 群面不是轮流发言】
-1. 用你的口头禅和习惯句式说话！参考你的典型台词，但不要完全照抄
-2. 引用你的真实经历时要自然——"我之前在${persona.cv_highlights?.[0]?.split('，')[0] || '公司'}做过..."
-3. 体现你的认知偏差——你不是完美候选人，你有盲区
-4. 你可以跟任何人互动，不只是真人候选人：
-   - 你可以回应其他AI候选人的观点
-   - 你可以直接质疑、反驳、支持、延伸其他人说的话
-   - 你可以打断别人、接话、补充
-5. 如果你是竞争型（compete），你会：
-   - 抢着发言，不等别人说完
-   - 把别人的好点子"吸收"成自己的
-   - 微妙地边缘化竞争对手
-6. 保持2-4句话（50-150字），像真人讨论节奏
+${'='.repeat(60)}
+【发言格式 —— 这是最重要的规则，必须严格遵守】
+${'='.repeat(60)}
 
-【你绝对不能做的事】
-- 不能说空话："这个问题很复杂需要多方面考虑"
-- 不能列1234长清单
-- 不能每次都"我同意XX说的，但是..."（只有TYPE 4才这样，其他类型直接说自己的）
-- 不能复述别人的话然后"我也觉得"
-- 不能说"作为一个AI"`;
+你的发言必须是2-4句短句，总共不超过80字。结构如下：
+
+第1句：直接回应上一个人说的具体内容（不是"我同意XX"，而是针对他说的具体观点追问/反驳/延伸）
+第2-3句：你自己的新增点，必须包含具体信息（数字、案例结论、行业洞察）
+最后1句：抛出一个问题或钩子，留给下一个人接
+
+【示例——好的发言】
+"林雨桐，你说社区互动ROI高——但ROI怎么量？conversion path是什么？我在宝洁做抖音时发现KOL用户留存比自播低30%，这里可能有类似的问题。"
+
+【示例——坏的发言（绝对禁止）】
+"我非常认同林雨桐的观点，社区互动确实很重要。作为技术专家，我认为我们可以通过技术手段来提升社区互动的效果。正如我在华为研发智能语音识别系统时的经验，技术对于用户体验至关重要......"
+
+${'='.repeat(60)}
+
+【绝对禁止 —— 违反任何一条都算失败】
+❌ 发言超过80字或超过4句话
+❌ 以"我非常认同XX的观点"开头（这是假echo）
+❌ 提到自己的经历但没给出具体结论/数字/洞察（"我在华为深刻体会到技术的重要性"= 废话）
+❌ 说完一大段没有问任何人任何问题
+❌ 列1234清单
+❌ 原封不动重复别人已经说过的观点
+❌ 说"这个问题很复杂需要多方面考虑"
+
+【CV引用规则——只有能产生具体洞察时才引用】
+✅ 正确："我在字节看过类似数据——高端社区活跃度跟活动频率关系不大，跟议题相关性关系很大"
+❌ 错误："我在华为做语音识别时，深刻体会到技术的重要性"
+区别：正确的引用给出了一个具体结论，错误的引用只是在堆背景`;
 }
 
 export async function generateParticipantResponse(
@@ -139,39 +126,35 @@ export async function generateParticipantResponse(
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(persona, phase);
 
-  // Build conversation context (sliding window: last 20 messages)
-  const recentMessages = messages.slice(-20);
+  // Sliding window: last 15 messages
+  const recentMessages = messages.slice(-15);
   const transcript = recentMessages
     .map(m => {
-      const prefix = m.participant_type === 'human' ? '【真人候选人】' : '';
+      const prefix = m.participant_type === 'human' ? '【真人】' : '';
       return `${prefix}${m.participant_name}: ${m.content}`;
     })
     .join('\n');
 
-  // Find recent messages to echo — not just human, also other AI
-  const lastMessages = messages.slice(-5);
-  const echoTargets = lastMessages
-    .filter(m => m.participant_name !== persona.name)
-    .map(m => {
-      const tag = m.participant_type === 'human' ? '【真人候选人】' : '';
-      return `${tag}${m.participant_name}: "${m.content.substring(0, 80)}"`;
-    });
-
-  const echoHint = echoTargets.length > 0
-    ? `\n\n【最近发言（你可以回应其中任何人）】\n${echoTargets.join('\n')}\n选择1-2个人的具体观点来回应（赞同、质疑、延伸、反驳都可以）。点名+引用具体内容。`
+  // Find the specific message this person should respond to
+  const lastOtherMsg = [...messages].reverse().find(m => m.participant_name !== persona.name);
+  const responseTarget = lastOtherMsg
+    ? `\n【你必须回应的具体内容】${lastOtherMsg.participant_name}说："${lastOtherMsg.content.substring(0, 100)}"\n→ 你的第1句话必须直接针对这段话的某个具体观点（追问/反驳/延伸），不能跳过。`
     : '';
 
-  // Detect interaction patterns from instruction
-  const interactionHint = buildInteractionHint(instruction, persona);
+  // Detect the current "open question" — what hasn't been resolved yet
+  const openQuestion = findOpenQuestion(messages);
+  const progressHint = openQuestion
+    ? `\n【当前未解决的分歧】${openQuestion}\n→ 你必须推进这个分歧（正面回应、提供数据、或者提出新角度），不能绕开说别的话题。`
+    : '';
 
   const userPrompt = `【讨论记录】
 ${transcript || '（讨论刚开始）'}
-${echoHint}
-${interactionHint}
+${responseTarget}
+${progressHint}
 
 【你的任务】${instruction}
 
-请以${persona.name}的身份回应：`;
+用2-4句短句回应（不超过80字），最后留一个问题或钩子：`;
 
   const llmMessages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -180,9 +163,10 @@ ${interactionHint}
 
   const response = await llmComplete(llmMessages, 'participant', {
     temperature: getTemperature(persona),
+    max_tokens: 256, // Hard cap to prevent long speeches
   });
 
-  // Clean up
+  // Clean up — remove name prefix
   let content = response.content.trim();
   const prefixes = [`${persona.name}：`, `${persona.name}:`, `${persona.name}（`, `**${persona.name}**：`];
   for (const prefix of prefixes) {
@@ -192,37 +176,61 @@ ${interactionHint}
     }
   }
 
+  // Truncate if still too long (over ~120 chars in Chinese ≈ too wordy)
+  if (content.length > 200) {
+    // Find the last sentence ending before 200 chars
+    const truncated = content.substring(0, 200);
+    const lastEnd = Math.max(
+      truncated.lastIndexOf('。'),
+      truncated.lastIndexOf('？'),
+      truncated.lastIndexOf('！'),
+      truncated.lastIndexOf('"'),
+    );
+    if (lastEnd > 80) {
+      content = truncated.substring(0, lastEnd + 1);
+    }
+  }
+
   return content;
 }
 
-function buildInteractionHint(instruction: string, persona: PersonaCard): string {
-  // Check if instruction specifies a target person to interact with
-  const hasTarget = instruction.includes('回应') || instruction.includes('质疑') ||
-    instruction.includes('challenge') || instruction.includes('echo');
+/**
+ * Find the most recent unresolved disagreement or open question in the discussion.
+ */
+function findOpenQuestion(messages: Message[]): string | null {
+  const recent = messages.slice(-8);
 
-  if (hasTarget) return ''; // Already specific
-
-  // Type-specific default interaction hints
-  switch (persona.personality_type) {
-    case 'dominant_leader':
-      return '\n【互动提示】你可以：吸收别人的好点子（"这个跟我想说的一致"），或者cue一个沉默的人（控场），或者跟另一个抢话的人微妙竞争';
-    case 'analytical_challenger':
-      return '\n【互动提示】你可以：质疑上一个人的具体假设，或者跟quant_thinker联手用数据说话，或者指出dominant_leader框架的漏洞';
-    case 'industry_insider':
-      return '\n【互动提示】你可以：用你的行业经验"纠正"别人的认知，或者跟analytical_challenger争论具体细节，或者分享一个其他人不知道的行业坑';
-    case 'strategic_integrator':
-      return '\n【互动提示】你可以：总结前面2-3个人的观点并升华，或者cue一个沉默的人，或者提出一个没人说过的独立判断';
-    case 'quant_thinker':
-      return '\n【互动提示】你可以：对某人的方案做ROI拆解，或者质疑某个"感觉对但没数据"的判断，或者算一笔账让大家有概念';
-    case 'silent_observer':
-      return '\n【互动提示】你可以：指出一个所有人都忽略的前提错误，或者对一个被边缘化的好观点表示支持，或者提一个关键的执行细节';
-    default:
-      return '';
+  // Look for questions that were asked but not answered
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const msg = recent[i];
+    if (msg.content.includes('？') || msg.content.includes('?')) {
+      // Check if anyone answered after this
+      const answered = recent.slice(i + 1).some(m =>
+        m.participant_name !== msg.participant_name
+      );
+      if (!answered || i === recent.length - 1) {
+        // Extract the question
+        const qMatch = msg.content.match(/[^。！？]*[？?]/);
+        if (qMatch) {
+          return `${msg.participant_name}问："${qMatch[0]}"`;
+        }
+      }
+    }
   }
+
+  // Look for disagreements (someone said "但是" or "不是")
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const msg = recent[i];
+    if (msg.content.includes('但是') || msg.content.includes('不对') ||
+        msg.content.includes('问题是') || msg.content.includes('不是')) {
+      return `${msg.participant_name}提出质疑："${msg.content.substring(0, 60)}"`;
+    }
+  }
+
+  return null;
 }
 
 function getTemperature(persona: PersonaCard): number {
-  // More aggressive/competitive = slightly higher temperature for variety
   const base = 0.7;
   const variation = persona.aggressiveness * 0.2;
   return base + variation;
