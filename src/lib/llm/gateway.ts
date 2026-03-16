@@ -44,12 +44,14 @@ export async function llmComplete(
   const temperature = options?.temperature ?? routing.temperature;
   const max_tokens = options?.max_tokens ?? routing.max_tokens;
 
-  // Sanitize parameters — prevent NaN/invalid values from reaching the API
+  // Sanitize parameters — prevent NaN/invalid values from reaching the API.
+  // Temperature ceiling 0.99: some providers (e.g. GLM) reject temperature >= 1.0.
+  // max_tokens floor 10: some providers enforce a minimum token count.
   const safeTemperature = (typeof temperature === 'number' && !isNaN(temperature))
-    ? Math.max(0.01, Math.min(1.0, temperature))
+    ? Math.max(0.01, Math.min(0.99, temperature))
     : 0.7;
   const safeMaxTokens = (typeof max_tokens === 'number' && !isNaN(max_tokens) && max_tokens > 0)
-    ? Math.floor(max_tokens)
+    ? Math.max(10, Math.floor(max_tokens))
     : 1024;
 
   // Try primary provider, then fallback chain
@@ -110,10 +112,10 @@ export async function* llmStream(
   const rawTemp = options?.temperature ?? routing.temperature;
   const rawMaxTokens = options?.max_tokens ?? routing.max_tokens;
   const safeTemp = (typeof rawTemp === 'number' && !isNaN(rawTemp))
-    ? Math.max(0.01, Math.min(1.0, rawTemp))
+    ? Math.max(0.01, Math.min(0.99, rawTemp))
     : 0.7;
   const safeMax = (typeof rawMaxTokens === 'number' && !isNaN(rawMaxTokens) && rawMaxTokens > 0)
-    ? Math.floor(rawMaxTokens)
+    ? Math.max(10, Math.floor(rawMaxTokens))
     : 1024;
 
   const stream = await client.chat.completions.create({

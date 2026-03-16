@@ -191,35 +191,37 @@ export async function startSession(sessionId: string): Promise<{
   );
   const openingDecision = getOpeningInstructions(nonHostParticipants, state.topic);
 
-  // Generate AI opening statements in parallel
-  const aiResponses = await Promise.all(
-    openingDecision.responders.map(async (r) => {
-      const participant = state.participants.find(p => p.id === r.participant_id);
-      if (!participant?.persona_card) return null;
+  // Generate AI opening statements sequentially to respect provider QPS limits
+  const aiResponses: ({ participant: Participant; content: string; delay_ms: number } | null)[] = [];
+  for (const r of openingDecision.responders) {
+    const participant = state.participants.find(p => p.id === r.participant_id);
+    if (!participant?.persona_card) {
+      aiResponses.push(null);
+      continue;
+    }
 
-      const content = await generateParticipantResponse(
-        participant.persona_card,
-        [],
-        'opening',
-        r.instruction
-      );
+    const content = await generateParticipantResponse(
+      participant.persona_card,
+      [],
+      'opening',
+      r.instruction
+    );
 
-      const message: Message = {
-        id: uuidv4(),
-        session_id: sessionId,
-        participant_id: participant.id,
-        participant_name: participant.display_name,
-        participant_type: 'ai',
-        content,
-        phase: 'opening',
-        is_interrupt: false,
-        timestamp: new Date().toISOString(),
-      };
-      state.messages.push(message);
+    const message: Message = {
+      id: uuidv4(),
+      session_id: sessionId,
+      participant_id: participant.id,
+      participant_name: participant.display_name,
+      participant_type: 'ai',
+      content,
+      phase: 'opening',
+      is_interrupt: false,
+      timestamp: new Date().toISOString(),
+    };
+    state.messages.push(message);
 
-      return { participant, content, delay_ms: r.delay_ms };
-    })
-  );
+    aiResponses.push({ participant, content, delay_ms: r.delay_ms });
+  }
 
   return {
     hostWelcome,
@@ -347,40 +349,42 @@ export async function handleUserMessage(
     state.phaseStartedAt = Date.now();
   }
 
-  // Generate AI responses
-  const aiResponses = await Promise.all(
-    decision.responders.map(async (r) => {
-      const participant = state.participants.find(p => p.id === r.participant_id);
-      if (!participant?.persona_card) return null;
+  // Generate AI responses sequentially to respect provider QPS limits
+  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
+  for (const r of decision.responders) {
+    const participant = state.participants.find(p => p.id === r.participant_id);
+    if (!participant?.persona_card) {
+      aiResponses.push(null);
+      continue;
+    }
 
-      const aiContent = await generateParticipantResponse(
-        participant.persona_card,
-        state.messages,
-        state.session.phase || 'discussion',
-        r.instruction
-      );
+    const aiContent = await generateParticipantResponse(
+      participant.persona_card,
+      state.messages,
+      state.session.phase || 'discussion',
+      r.instruction
+    );
 
-      const message: Message = {
-        id: uuidv4(),
-        session_id: sessionId,
-        participant_id: participant.id,
-        participant_name: participant.display_name,
-        participant_type: 'ai',
-        content: aiContent,
-        phase: state.session.phase || 'discussion',
-        is_interrupt: r.is_interrupt,
-        timestamp: new Date().toISOString(),
-      };
-      state.messages.push(message);
+    const message: Message = {
+      id: uuidv4(),
+      session_id: sessionId,
+      participant_id: participant.id,
+      participant_name: participant.display_name,
+      participant_type: 'ai',
+      content: aiContent,
+      phase: state.session.phase || 'discussion',
+      is_interrupt: r.is_interrupt,
+      timestamp: new Date().toISOString(),
+    };
+    state.messages.push(message);
 
-      return {
-        participant,
-        content: aiContent,
-        delay_ms: r.delay_ms,
-        is_interrupt: r.is_interrupt,
-      };
-    })
-  );
+    aiResponses.push({
+      participant,
+      content: aiContent,
+      delay_ms: r.delay_ms,
+      is_interrupt: r.is_interrupt,
+    });
+  }
 
   return {
     aiResponses: aiResponses.filter((r): r is NonNullable<typeof r> => r !== null),
