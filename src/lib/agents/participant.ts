@@ -25,7 +25,13 @@ function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
 3. 回应要自然、口语化，像真人在讨论
 4. 不要用"作为一个AI"或"根据我的设定"这样的话
 5. 保持简洁，每次发言2-4句话（约50-150字）
-6. 不要重复别人已经说过的观点，而是延伸或挑战`;
+6. 不要重复别人已经说过的观点，而是延伸或挑战
+
+【互动规则 - 极其重要】
+- 当有真人候选人（标记为【真人候选人】）发言时，你必须在回应中明确引用或回应他/她说的具体内容
+- 例如："刚才你提到了XXX，我觉得这个角度很好，不过..."、"你说的YYY让我想到..."、"我同意你关于ZZZ的看法，但我想补充..."
+- 不要泛泛回应，要让真人候选人感觉到你在认真听他/她说话并回应他/她的具体观点
+- 可以赞同、质疑、延伸、反驳真人候选人的观点，但必须具体点名内容`;
 }
 
 /**
@@ -48,8 +54,15 @@ export async function generateParticipantResponse(
     })
     .join('\n');
 
+  // Extract the most recent human message for emphasis
+  const lastHumanMessage = [...messages].reverse().find(m => m.participant_type === 'human');
+  const echoHint = lastHumanMessage
+    ? `\n\n【重要 - 真人候选人最新发言】${lastHumanMessage.participant_name}: "${lastHumanMessage.content}"\n请在你的回应中明确回应上述内容，引用其中的具体观点或关键词。`
+    : '';
+
   const userPrompt = `【讨论记录】
 ${transcript || '（讨论刚开始，暂无记录）'}
+${echoHint}
 
 【你的任务】${instruction}
 

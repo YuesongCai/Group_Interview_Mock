@@ -53,6 +53,7 @@ export async function POST(
         type: (p as unknown as { is_host?: boolean }).is_host ? 'host' : p.type,
         avatar_color: p.avatar_color,
         background_summary: p.persona_card?.background || null,
+        persona_card: p.persona_card || null,
       })),
       config: state.session.config,
       opening: {

@@ -395,6 +395,130 @@ export async function handleUserMessage(
 }
 
 /**
+ * Generate proactive AI messages without user input.
+ * Aggressive participants may speak on their own after a period of silence.
+ */
+export async function generateProactiveMessages(
+  sessionId: string
+): Promise<{
+  aiResponses: { participant: Participant; content: string; delay_ms: number; is_interrupt: boolean }[];
+  hostMessage?: string;
+}> {
+  const state = sessions.get(sessionId);
+  if (!state || !state.topic) throw new Error('Session not found');
+
+  // Don't generate proactive messages if session is not in active phase
+  const activeStatuses = ['opening', 'discussion', 'summary'];
+  if (!activeStatuses.includes(state.session.status)) {
+    return { aiResponses: [] };
+  }
+
+  // Pick aggressive AI participants who should speak proactively
+  const aiParticipants = state.participants.filter(
+    p => p.type === 'ai' && p.persona_card && !(p as Participant & { is_host?: boolean }).is_host
+  );
+
+  // Sort by aggressiveness descending, pick 1-2 most aggressive
+  const sorted = [...aiParticipants].sort(
+    (a, b) => (b.persona_card?.aggressiveness || 0) - (a.persona_card?.aggressiveness || 0)
+  );
+
+  // Only participants with aggressiveness > 0.5 will speak proactively
+  const proactiveParticipants = sorted.filter(
+    p => (p.persona_card?.aggressiveness || 0) > 0.5
+  );
+
+  // Pick 1-2 proactive speakers (random subset based on aggressiveness)
+  const speakers = proactiveParticipants.filter(
+    p => Math.random() < (p.persona_card?.aggressiveness || 0)
+  ).slice(0, 2);
+
+  if (speakers.length === 0 && proactiveParticipants.length > 0) {
+    // At least pick the most aggressive one
+    speakers.push(proactiveParticipants[0]);
+  }
+
+  if (speakers.length === 0) {
+    return { aiResponses: [] };
+  }
+
+  // Build instructions based on context
+  const lastMessages = state.messages.slice(-5);
+  const lastSpeakers = new Set(lastMessages.map(m => m.participant_id));
+
+  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
+
+  for (const speaker of speakers) {
+    if (!speaker.persona_card) continue;
+
+    // Skip if this participant just spoke recently
+    if (lastSpeakers.has(speaker.id) && lastMessages.length > 2) continue;
+
+    const instruction = buildProactiveInstruction(speaker, state.messages, state.session.phase || 'discussion');
+
+    const content = await generateParticipantResponse(
+      speaker.persona_card,
+      state.messages,
+      state.session.phase || 'discussion',
+      instruction
+    );
+
+    const message: Message = {
+      id: uuidv4(),
+      session_id: sessionId,
+      participant_id: speaker.id,
+      participant_name: speaker.display_name,
+      participant_type: 'ai',
+      content,
+      phase: state.session.phase || 'discussion',
+      is_interrupt: true,
+      timestamp: new Date().toISOString(),
+    };
+    state.messages.push(message);
+
+    aiResponses.push({
+      participant: speaker,
+      content,
+      delay_ms: 1000 + Math.random() * 2000,
+      is_interrupt: true,
+    });
+  }
+
+  return {
+    aiResponses: aiResponses.filter((r): r is NonNullable<typeof r> => r !== null),
+  };
+}
+
+function buildProactiveInstruction(
+  participant: Participant,
+  messages: Message[],
+  phase: SessionPhase
+): string {
+  const personality = participant.persona_card?.personality_type || '';
+  const lastMessage = messages[messages.length - 1];
+
+  if (messages.length <= 3) {
+    return '讨论刚开始，主动抛出你对这个话题的一个新角度或者独特观点，吸引其他人的注意。';
+  }
+
+  if (personality === 'assertive_leader') {
+    return lastMessage
+      ? `主动推进讨论方向。针对刚才的讨论，提出你认为最重要的下一步议题，或者尝试总结大家的共识并提出行动方案。`
+      : '作为讨论的推动者，主动发起一个新的讨论角度。';
+  }
+
+  if (personality === 'devils_advocate') {
+    return lastMessage
+      ? `找到刚才讨论中的一个漏洞或者被忽略的风险点，主动提出质疑。要有建设性，不要只是为了反对而反对。`
+      : '提出一个大家可能没有考虑到的反面观点。';
+  }
+
+  return lastMessage
+    ? `基于之前的讨论，主动分享你的看法或补充一个新的角度。不要等别人问你，直接说出你的想法。`
+    : '主动参与讨论，提出你的独特见解。';
+}
+
+/**
  * End session and generate evaluation.
  */
 export async function endSession(sessionId: string) {

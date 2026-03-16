@@ -4,12 +4,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import ChatRoom from '@/components/chat/ChatRoom';
 
+interface PersonaCard {
+  name: string;
+  background: string;
+  personality_type: string;
+  aggressiveness: number;
+  knowledge_depth: string;
+  speaking_style: string;
+  bias_tendency: string;
+}
+
 interface ParticipantInfo {
   id: string;
   display_name: string;
   type: 'human' | 'ai' | 'host';
   avatar_color: string;
   background_summary?: string | null;
+  persona_card?: PersonaCard | null;
 }
 
 interface SessionData {

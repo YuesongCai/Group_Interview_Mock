@@ -75,6 +75,33 @@
   overflow: hidden;
 }
 
+.clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 6px;
+  margin: -6px;
+  transition: background 0.15s ease;
+}
+
+.clickable:hover {
+  background: var(--bg-primary);
+}
+
+.viewBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.clickable:hover .viewBadge {
+  opacity: 1;
+}
+
 .hostBadge {
   font-size: 11px;
   padding: 1px 6px;

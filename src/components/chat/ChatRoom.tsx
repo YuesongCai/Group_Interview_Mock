@@ -4,10 +4,21 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import ParticipantList from './ParticipantList';
+import PersonaCardModal from './PersonaCardModal';
 import PhaseTimer from './PhaseTimer';
 import TopicSidebar from './TopicSidebar';
 import { useVoice } from '@/hooks/useVoice';
 import styles from './ChatRoom.module.css';
+
+interface PersonaCard {
+  name: string;
+  background: string;
+  personality_type: string;
+  aggressiveness: number;
+  knowledge_depth: string;
+  speaking_style: string;
+  bias_tendency: string;
+}
 
 interface ParticipantInfo {
   id: string;
@@ -15,6 +26,7 @@ interface ParticipantInfo {
   type: 'human' | 'ai' | 'host';
   avatar_color: string;
   background_summary?: string | null;
+  persona_card?: PersonaCard | null;
 }
 
 interface ChatMessage {
@@ -62,10 +74,16 @@ export default function ChatRoom({
   const [isLoading, setIsLoading] = useState(false);
   const [typingIds, setTypingIds] = useState<string[]>([]);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [selectedPersona, setSelectedPersona] = useState<{
+    persona: PersonaCard;
+    avatarColor: string;
+  } | null>(null);
   const [startedAt] = useState(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const humanParticipant = participants.find(p => p.type === 'human');
+  const proactiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isProactiveFetchingRef = useRef(false);
 
   // Voice I/O
   const voice = useVoice({ lang: 'zh-CN' });
@@ -119,6 +137,49 @@ export default function ChatRoom({
     },
     [participants, addMessage]
   );
+
+  // Proactive AI speaking: aggressive participants talk on their own
+  const triggerProactive = useCallback(async () => {
+    if (isProactiveFetchingRef.current || sessionEnded || isLoading) return;
+    isProactiveFetchingRef.current = true;
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/proactive`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+
+      if (data.ai_responses?.length > 0) {
+        await deliverAiResponses(data.ai_responses);
+      }
+    } catch (error) {
+      console.error('Proactive message failed:', error);
+    } finally {
+      isProactiveFetchingRef.current = false;
+    }
+  }, [sessionId, sessionEnded, isLoading, deliverAiResponses]);
+
+  // Reset proactive timer whenever messages change or user sends
+  const resetProactiveTimer = useCallback(() => {
+    if (proactiveTimerRef.current) {
+      clearTimeout(proactiveTimerRef.current);
+    }
+    if (!sessionEnded) {
+      // After 12-20 seconds of user inactivity, AI speaks proactively
+      const delay = 12000 + Math.random() * 8000;
+      proactiveTimerRef.current = setTimeout(() => {
+        triggerProactive();
+      }, delay);
+    }
+  }, [sessionEnded, triggerProactive]);
+
+  // Start/reset proactive timer when messages change
+  useEffect(() => {
+    resetProactiveTimer();
+    return () => {
+      if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
+    };
+  }, [messages.length, resetProactiveTimer]);
 
   // Send user message
   const handleSend = useCallback(async (content: string) => {
@@ -298,19 +359,27 @@ export default function ChatRoom({
         {/* Messages */}
         <div className={styles.messagesArea}>
           <div className={styles.messagesList}>
-            {messages.map(msg => (
-              <MessageBubble
-                key={msg.id}
-                participantName={msg.participant_name}
-                content={msg.content}
-                isUser={msg.participant_type === 'human'}
-                isHost={msg.participant_type === 'host'}
-                isInterrupt={msg.is_interrupt}
-                isSystem={msg.is_system}
-                avatarColor={msg.avatar_color}
-                timestamp={msg.timestamp}
-              />
-            ))}
+            {messages.map(msg => {
+              const msgParticipant = participants.find(p => p.id === msg.participant_id);
+              const hasPersona = msgParticipant?.type === 'ai' && msgParticipant?.persona_card;
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  participantName={msg.participant_name}
+                  content={msg.content}
+                  isUser={msg.participant_type === 'human'}
+                  isHost={msg.participant_type === 'host'}
+                  isInterrupt={msg.is_interrupt}
+                  isSystem={msg.is_system}
+                  avatarColor={msg.avatar_color}
+                  timestamp={msg.timestamp}
+                  onAvatarClick={hasPersona ? () => setSelectedPersona({
+                    persona: msgParticipant.persona_card!,
+                    avatarColor: msgParticipant.avatar_color,
+                  }) : undefined}
+                />
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -339,6 +408,14 @@ export default function ChatRoom({
           typingParticipantIds={typingIds}
         />
       </div>
+
+      {selectedPersona && (
+        <PersonaCardModal
+          persona={selectedPersona.persona}
+          avatarColor={selectedPersona.avatarColor}
+          onClose={() => setSelectedPersona(null)}
+        />
+      )}
     </div>
   );
 }

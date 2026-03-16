@@ -11,6 +11,7 @@ interface MessageBubbleProps {
   isSystem: boolean;
   avatarColor: string;
   timestamp: string;
+  onAvatarClick?: () => void;
 }
 
 export default function MessageBubble({
@@ -22,6 +23,7 @@ export default function MessageBubble({
   isSystem,
   avatarColor,
   timestamp,
+  onAvatarClick,
 }: MessageBubbleProps) {
   if (isSystem) {
     return (
@@ -53,8 +55,10 @@ export default function MessageBubble({
       className={`${styles.message} ${messageClass} animate-fade-in`}
     >
       <div
-        className={styles.avatar}
+        className={`${styles.avatar} ${onAvatarClick ? styles.avatarClickable : ''}`}
         style={{ backgroundColor: avatarColor }}
+        onClick={onAvatarClick}
+        title={onAvatarClick ? `查看${participantName}的简历` : undefined}
       >
         {isHost ? '🎙' : participantName[0]}
       </div>

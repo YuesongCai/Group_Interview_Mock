@@ -39,7 +39,7 @@ export const MODEL_ROUTING: Record<AgentRole, ModelRouting> = {
     provider: 'glm',
     model: 'glm-4-flash',
     temperature: 0.7,
-    max_tokens: 800,
+    max_tokens: 2000,
   },
   persona_generator: {
     provider: 'glm',

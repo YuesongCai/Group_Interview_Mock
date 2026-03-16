@@ -32,6 +32,16 @@
   flex-shrink: 0;
 }
 
+.avatarClickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.avatarClickable:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .bubbleWrapper {
   display: flex;
   flex-direction: column;
