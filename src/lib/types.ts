@@ -82,11 +82,15 @@ export interface Topic {
 export type ParticipantType = 'human' | 'ai';
 
 export type PersonalityArchetype =
-  | 'assertive_leader'
-  | 'analytical_thinker'
-  | 'collaborative_mediator'
-  | 'quiet_observer'
-  | 'devils_advocate';
+  | 'dominant_leader'       // TYPE 1: 抢占型Leader
+  | 'analytical_challenger' // TYPE 2: 分析型反驳者
+  | 'industry_insider'      // TYPE 3: 实战型行业派
+  | 'strategic_integrator'  // TYPE 4: 整合协调型
+  | 'quant_thinker'         // TYPE 5: 数据/量化型
+  | 'silent_observer';      // TYPE 6: 佛系旁观者
+
+// Group atmosphere type — determines overall competitiveness
+export type AtmosphereType = 'aggressive' | 'analytical' | 'cooperative';
 
 export interface PersonaCard {
   name: string;
@@ -102,6 +106,11 @@ export interface PersonaCard {
   strength_blindspot: string;  // e.g. "数据分析很强但忽略用户情感"
   weakness: string;            // e.g. "容易在细节里迷失，忘记回归主线"
   cv_highlights: string[];     // e.g. ["字节跳动2年广告投放经验", "操盘过月GMV 500万的项目"]
+  // Core spiritual identity
+  core_perspective: string;    // The one lens through which they see everything
+  behavioral_tendency: string; // cooperate/compete/analyze/execute
+  sample_lines: string[];      // 3-5 typical lines this person would say
+  panic_behavior?: string;     // What they do when stressed/losing control
 }
 
 export interface Participant {

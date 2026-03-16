@@ -16,6 +16,10 @@ interface PersonaCard {
   strength_blindspot?: string;
   weakness?: string;
   cv_highlights?: string[];
+  core_perspective?: string;
+  behavioral_tendency?: string;
+  sample_lines?: string[];
+  panic_behavior?: string;
 }
 
 interface PersonaCardModalProps {
@@ -25,6 +29,13 @@ interface PersonaCardModalProps {
 }
 
 const PERSONALITY_LABELS: Record<string, string> = {
+  dominant_leader: '抢占型Leader',
+  analytical_challenger: '分析型反驳者',
+  industry_insider: '实战型行业派',
+  strategic_integrator: '整合协调型',
+  quant_thinker: '数据量化型',
+  silent_observer: '佛系旁观者',
+  // Legacy types (backwards compat)
   assertive_leader: '强势领导型',
   analytical_thinker: '分析思考型',
   collaborative_mediator: '协作调和型',

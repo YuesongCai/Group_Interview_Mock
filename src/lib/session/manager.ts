@@ -746,21 +746,40 @@ function buildProactiveInstruction(
     return '讨论刚开始，主动抛出你对这个话题的一个新角度或者独特观点。';
   }
 
-  if (personality === 'assertive_leader') {
+  if (personality === 'dominant_leader') {
     return lastMessage
-      ? `主动推进讨论方向。提出你认为最重要的下一步议题，或者尝试总结大家的共识。`
-      : '作为讨论的推动者，主动发起一个新的讨论角度。';
+      ? `抢先推进讨论方向。总结大家的共识然后带向你想去的方向。用你的框架思维主导节奏。`
+      : '你来组织讨论，抛出框架和步骤。';
   }
 
-  if (personality === 'devils_advocate') {
+  if (personality === 'analytical_challenger') {
     return lastMessage
-      ? `找到刚才讨论中的一个漏洞或被忽略的风险，主动提出质疑。要有建设性。`
-      : '提出一个大家可能没有考虑到的反面观点。';
+      ? `找到刚才讨论中一个站不住脚的假设，直接质疑。说"但是"。`
+      : '提出一个需要验证的关键假设。';
   }
 
+  if (personality === 'industry_insider') {
+    return lastMessage
+      ? `用你的行业经验来回应刚才的讨论。如果觉得别人理解有偏差，直接纠正。`
+      : '分享一个只有做过这个行业的人才知道的insight。';
+  }
+
+  if (personality === 'quant_thinker') {
+    return lastMessage
+      ? `对刚才讨论的方向做量化拆解。问"这个数怎么算"或者自己算一笔账。`
+      : '抓住题目数据做一个快速拆解。';
+  }
+
+  if (personality === 'silent_observer') {
+    return lastMessage
+      ? `指出一个所有人都忽略的前提或矛盾。你的发言必须有独立信息增量。`
+      : '提出一个你观察到的、别人没注意到的关键点。';
+  }
+
+  // strategic_integrator or default
   return lastMessage
-    ? `基于之前的讨论，主动分享你的看法或补充一个新的角度。`
-    : '主动参与讨论，提出你的独特见解。';
+    ? `整合前面几个人的观点，找到共识和分歧，提出一个更高层的理解。或者cue一个沉默的人。`
+    : '简短分享你的初步想法。';
 }
 
 /**

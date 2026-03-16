@@ -17,6 +17,10 @@ interface PersonaCard {
   strength_blindspot?: string;
   weakness?: string;
   cv_highlights?: string[];
+  core_perspective?: string;
+  behavioral_tendency?: string;
+  sample_lines?: string[];
+  panic_behavior?: string;
 }
 
 interface ParticipantInfo {
