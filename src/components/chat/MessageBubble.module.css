@@ -1,0 +1,103 @@
+.message {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  max-width: 85%;
+}
+
+.userMessage {
+  margin-left: auto;
+  flex-direction: row-reverse;
+}
+
+.aiMessage {
+  margin-right: auto;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+}
+
+.bubbleWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userMessage .nameRow {
+  flex-direction: row-reverse;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.interruptBadge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.userBubble {
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.aiBubble {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.systemMessage {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.systemContent {
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+  max-width: 80%;
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
