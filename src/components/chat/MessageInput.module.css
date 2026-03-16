@@ -7,8 +7,13 @@
   align-items: flex-end;
 }
 
-.textarea {
+.inputWrapper {
   flex: 1;
+  position: relative;
+}
+
+.textarea {
+  width: 100%;
   min-height: 40px;
   max-height: 120px;
   padding: 10px 14px;
@@ -20,6 +25,7 @@
   line-height: 1.5;
   resize: none;
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
 .textarea:focus {
@@ -39,4 +45,59 @@
   padding: 10px 20px;
   height: 40px;
   flex-shrink: 0;
+}
+
+.micBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.micBtn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.micBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.micActive {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+  animation: pulse-mic 1.5s infinite;
+}
+
+.micActive:hover {
+  background: #dc2626;
+  color: white;
+}
+
+@keyframes pulse-mic {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+.interimText {
+  position: absolute;
+  bottom: -20px;
+  left: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
 }

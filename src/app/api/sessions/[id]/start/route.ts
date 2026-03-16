@@ -34,23 +34,34 @@ export async function POST(
       state = await prepareSession(sessionId);
     }
 
-    // Step 2: Start session and get opening messages
-    const { systemMessage, aiResponses } = await startSession(sessionId);
+    // Step 2: Start session and get opening messages (host welcome + AI openings)
+    const { hostWelcome, aiResponses } = await startSession(sessionId);
+
+    // Find host participant
+    const hostParticipant = state.participants.find(
+      (p) => (p as unknown as { is_host?: boolean }).is_host
+    );
 
     return NextResponse.json({
       session_id: sessionId,
       status: state.session.status,
       topic: state.topic,
+      jd_text: state.session.jd_text,
       participants: state.participants.map(p => ({
         id: p.id,
         display_name: p.display_name,
-        type: p.type,
+        type: (p as unknown as { is_host?: boolean }).is_host ? 'host' : p.type,
         avatar_color: p.avatar_color,
         background_summary: p.persona_card?.background || null,
       })),
       config: state.session.config,
       opening: {
-        system_message: systemMessage,
+        host_welcome: hostWelcome,
+        host_participant: hostParticipant ? {
+          id: hostParticipant.id,
+          display_name: hostParticipant.display_name,
+          avatar_color: hostParticipant.avatar_color,
+        } : null,
         ai_responses: aiResponses.map(r => ({
           participant_id: r.participant.id,
           participant_name: r.participant.display_name,

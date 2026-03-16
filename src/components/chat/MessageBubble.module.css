@@ -14,6 +14,11 @@
   margin-right: auto;
 }
 
+.hostMessage {
+  margin-right: auto;
+  max-width: 90%;
+}
+
 .avatar {
   width: 36px;
   height: 36px;
@@ -54,6 +59,15 @@
   color: var(--text-muted);
 }
 
+.hostBadge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  font-weight: 500;
+}
+
 .interruptBadge {
   font-size: 11px;
   padding: 1px 6px;
@@ -80,6 +94,13 @@
 .aiBubble {
   background: var(--bg-card);
   border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.hostBubble {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
   color: var(--text-primary);
   border-bottom-left-radius: 4px;
 }

@@ -3,6 +3,7 @@
   flex-direction: column;
   height: 100vh;
   background: var(--bg-primary);
+  position: relative;
 }
 
 .header {
@@ -28,6 +29,56 @@
   text-overflow: ellipsis;
 }
 
+.headerControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ttsToggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.ttsToggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.ttsActive {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.stopSpeakBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--warning);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.stopSpeakBtn:hover {
+  background: var(--bg-secondary);
+}
+
 .mainArea {
   display: flex;
   flex: 1;
@@ -39,6 +90,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 
 .messagesList {

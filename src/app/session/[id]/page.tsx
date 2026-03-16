@@ -7,21 +7,34 @@ import ChatRoom from '@/components/chat/ChatRoom';
 interface ParticipantInfo {
   id: string;
   display_name: string;
-  type: 'human' | 'ai';
+  type: 'human' | 'ai' | 'host';
   avatar_color: string;
   background_summary?: string | null;
 }
 
 interface SessionData {
   session_id: string;
-  topic: { title: string; description: string };
+  topic: {
+    title: string;
+    description: string;
+    type?: string;
+    background_material?: string;
+    key_questions?: string[];
+  };
+  jd_text?: string;
   participants: ParticipantInfo[];
   config: {
     duration_minutes: number;
     phases: { opening: number; discussion: number; summary: number };
   };
   opening: {
-    system_message: string;
+    host_welcome?: string;
+    host_participant?: {
+      id: string;
+      display_name: string;
+      avatar_color: string;
+    } | null;
+    system_message?: string;
     ai_responses: {
       participant_id: string;
       participant_name: string;
@@ -35,7 +48,7 @@ interface ChatMessage {
   id: string;
   participant_id: string;
   participant_name: string;
-  participant_type: 'human' | 'ai';
+  participant_type: 'human' | 'ai' | 'host';
   content: string;
   is_interrupt: boolean;
   is_system: boolean;
@@ -69,10 +82,24 @@ export default function SessionPage() {
         const data: SessionData = await res.json();
         setSessionData(data);
 
-        // Build initial messages from opening
+        // Build initial messages
         const messages: ChatMessage[] = [];
 
-        if (data.opening.system_message) {
+        // Host welcome message
+        if (data.opening.host_welcome && data.opening.host_participant) {
+          messages.push({
+            id: crypto.randomUUID(),
+            participant_id: data.opening.host_participant.id,
+            participant_name: data.opening.host_participant.display_name,
+            participant_type: 'host',
+            content: data.opening.host_welcome,
+            is_interrupt: false,
+            is_system: false,
+            avatar_color: data.opening.host_participant.avatar_color,
+            timestamp: new Date().toISOString(),
+          });
+        } else if (data.opening.system_message) {
+          // Fallback to old system message format
           messages.push({
             id: crypto.randomUUID(),
             participant_id: 'system',
@@ -86,6 +113,7 @@ export default function SessionPage() {
           });
         }
 
+        // AI opening statements
         for (const r of data.opening.ai_responses) {
           const participant = data.participants.find(p => p.id === r.participant_id);
           messages.push({
@@ -169,6 +197,7 @@ export default function SessionPage() {
       topic={sessionData.topic}
       participants={sessionData.participants}
       config={sessionData.config}
+      jdText={sessionData.jd_text}
       initialMessages={initialMessages}
       onSessionEnd={handleSessionEnd}
     />

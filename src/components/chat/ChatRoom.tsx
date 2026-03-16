@@ -5,12 +5,14 @@ import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import ParticipantList from './ParticipantList';
 import PhaseTimer from './PhaseTimer';
+import TopicSidebar from './TopicSidebar';
+import { useVoice } from '@/hooks/useVoice';
 import styles from './ChatRoom.module.css';
 
 interface ParticipantInfo {
   id: string;
   display_name: string;
-  type: 'human' | 'ai';
+  type: 'human' | 'ai' | 'host';
   avatar_color: string;
   background_summary?: string | null;
 }
@@ -19,7 +21,7 @@ interface ChatMessage {
   id: string;
   participant_id: string;
   participant_name: string;
-  participant_type: 'human' | 'ai';
+  participant_type: 'human' | 'ai' | 'host';
   content: string;
   is_interrupt: boolean;
   is_system: boolean;
@@ -32,12 +34,16 @@ interface ChatRoomProps {
   topic: {
     title: string;
     description: string;
+    type?: string;
+    background_material?: string;
+    key_questions?: string[];
   };
   participants: ParticipantInfo[];
   config: {
     duration_minutes: number;
     phases: { opening: number; discussion: number; summary: number };
   };
+  jdText?: string;
   initialMessages?: ChatMessage[];
   onSessionEnd: () => void;
 }
@@ -47,6 +53,7 @@ export default function ChatRoom({
   topic,
   participants,
   config,
+  jdText,
   initialMessages = [],
   onSessionEnd,
 }: ChatRoomProps) {
@@ -60,18 +67,35 @@ export default function ChatRoom({
 
   const humanParticipant = participants.find(p => p.type === 'human');
 
+  // Voice I/O
+  const voice = useVoice({ lang: 'zh-CN' });
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // TTS: speak new AI/host messages
+  const lastMessageCountRef = useRef(initialMessages.length);
+  useEffect(() => {
+    if (!voice.ttsEnabled) return;
+    const newMessages = messages.slice(lastMessageCountRef.current);
+    lastMessageCountRef.current = messages.length;
+
+    for (const msg of newMessages) {
+      if (msg.participant_type !== 'human' && !msg.is_system) {
+        voice.speak(msg.content, msg.participant_id);
+      }
+    }
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages(prev => [...prev, msg]);
   }, []);
 
-  // Simulate delayed AI responses
+  // Deliver AI responses with typing indicators and staggered delays
   const deliverAiResponses = useCallback(
-    async (responses: { participant_id: string; participant_name: string; content: string; delay_ms: number; is_interrupt: boolean }[]) => {
+    async (responses: { participant_id: string; participant_name: string; content: string; delay_ms: number; is_interrupt: boolean; participant_type?: string }[]) => {
       for (const r of responses) {
         const participant = participants.find(p => p.id === r.participant_id);
 
@@ -84,7 +108,7 @@ export default function ChatRoom({
           id: crypto.randomUUID(),
           participant_id: r.participant_id,
           participant_name: r.participant_name,
-          participant_type: 'ai',
+          participant_type: (r.participant_type as 'ai' | 'host') || 'ai',
           content: r.content,
           is_interrupt: r.is_interrupt,
           is_system: false,
@@ -100,7 +124,6 @@ export default function ChatRoom({
   const handleSend = useCallback(async (content: string) => {
     if (!humanParticipant || isLoading || sessionEnded) return;
 
-    // Add user message immediately
     addMessage({
       id: crypto.randomUUID(),
       participant_id: humanParticipant.id,
@@ -124,7 +147,25 @@ export default function ChatRoom({
 
       const data = await res.json();
 
-      if (data.system_message) {
+      // Host message (phase transitions, interjections)
+      if (data.host_message) {
+        const hostParticipant = participants.find(p => p.type === 'host');
+        if (hostParticipant) {
+          addMessage({
+            id: crypto.randomUUID(),
+            participant_id: hostParticipant.id,
+            participant_name: hostParticipant.display_name,
+            participant_type: 'host',
+            content: data.host_message,
+            is_interrupt: false,
+            is_system: false,
+            avatar_color: hostParticipant.avatar_color,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (data.system_message && !data.host_message) {
         addMessage({
           id: crypto.randomUUID(),
           participant_id: 'system',
@@ -139,37 +180,21 @@ export default function ChatRoom({
       }
 
       if (data.phase_change) {
-        const phaseLabels: Record<string, string> = {
-          discussion: '进入自由讨论环节',
-          summary: '进入总结陈述环节',
-        };
         setPhase(data.phase_change);
-        if (phaseLabels[data.phase_change]) {
-          addMessage({
-            id: crypto.randomUUID(),
-            participant_id: 'system',
-            participant_name: '系统',
-            participant_type: 'ai',
-            content: phaseLabels[data.phase_change],
-            is_interrupt: false,
-            is_system: true,
-            avatar_color: '#666',
-            timestamp: new Date().toISOString(),
-          });
-        }
       }
 
       if (data.session_ended) {
         setSessionEnded(true);
+        const hostParticipant = participants.find(p => p.type === 'host');
         addMessage({
           id: crypto.randomUUID(),
-          participant_id: 'system',
-          participant_name: '系统',
-          participant_type: 'ai',
-          content: '讨论时间到！正在生成评估报告...',
+          participant_id: hostParticipant?.id || 'system',
+          participant_name: hostParticipant?.display_name || '系统',
+          participant_type: hostParticipant ? 'host' : 'ai',
+          content: '讨论时间到！感谢各位候选人的精彩讨论，现在进入评估环节...',
           is_interrupt: false,
-          is_system: true,
-          avatar_color: '#666',
+          is_system: !hostParticipant,
+          avatar_color: hostParticipant?.avatar_color || '#666',
           timestamp: new Date().toISOString(),
         });
         onSessionEnd();
@@ -184,25 +209,26 @@ export default function ChatRoom({
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, humanParticipant, isLoading, sessionEnded, addMessage, deliverAiResponses, onSessionEnd]);
+  }, [sessionId, humanParticipant, isLoading, sessionEnded, addMessage, deliverAiResponses, onSessionEnd, participants]);
 
   const handleTimeUp = useCallback(() => {
     if (!sessionEnded) {
       setSessionEnded(true);
+      const hostParticipant = participants.find(p => p.type === 'host');
       addMessage({
         id: crypto.randomUUID(),
-        participant_id: 'system',
-        participant_name: '系统',
-        participant_type: 'ai',
+        participant_id: hostParticipant?.id || 'system',
+        participant_name: hostParticipant?.display_name || '系统',
+        participant_type: hostParticipant ? 'host' : 'ai',
         content: '讨论时间到！',
         is_interrupt: false,
-        is_system: true,
-        avatar_color: '#666',
+        is_system: !hostParticipant,
+        avatar_color: hostParticipant?.avatar_color || '#666',
         timestamp: new Date().toISOString(),
       });
       onSessionEnd();
     }
-  }, [sessionEnded, addMessage, onSessionEnd]);
+  }, [sessionEnded, addMessage, onSessionEnd, participants]);
 
   return (
     <div className={styles.chatRoom}>
@@ -211,13 +237,49 @@ export default function ChatRoom({
         <div className={styles.topicInfo}>
           <h2 className={styles.topicTitle}>{topic.title}</h2>
         </div>
-        <button
-          className="btn btn-danger"
-          onClick={onSessionEnd}
-          style={{ fontSize: '13px', padding: '6px 14px' }}
-        >
-          结束讨论
-        </button>
+        <div className={styles.headerControls}>
+          {/* TTS toggle */}
+          {voice.ttsSupported && (
+            <button
+              className={`${styles.ttsToggle} ${voice.ttsEnabled ? styles.ttsActive : ''}`}
+              onClick={() => {
+                voice.setTtsEnabled(!voice.ttsEnabled);
+                if (voice.isSpeaking) voice.stopSpeaking();
+              }}
+              title={voice.ttsEnabled ? '关闭语音播放' : '开启语音播放'}
+            >
+              {voice.ttsEnabled ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <line x1="23" y1="9" x2="17" y2="15"/>
+                  <line x1="17" y1="9" x2="23" y2="15"/>
+                </svg>
+              )}
+            </button>
+          )}
+          {voice.isSpeaking && (
+            <button
+              className={styles.stopSpeakBtn}
+              onClick={voice.stopSpeaking}
+              title="停止播放"
+            >
+              ■
+            </button>
+          )}
+          <button
+            className="btn btn-danger"
+            onClick={onSessionEnd}
+            style={{ fontSize: '13px', padding: '6px 14px' }}
+          >
+            结束讨论
+          </button>
+        </div>
       </div>
 
       {/* Timer */}
@@ -228,8 +290,11 @@ export default function ChatRoom({
         onTimeUp={handleTimeUp}
       />
 
-      {/* Main area */}
+      {/* Main area: Topic Sidebar | Messages | Participants */}
       <div className={styles.mainArea}>
+        {/* Topic sidebar (left) */}
+        <TopicSidebar topic={topic} jdText={jdText} />
+
         {/* Messages */}
         <div className={styles.messagesArea}>
           <div className={styles.messagesList}>
@@ -239,6 +304,7 @@ export default function ChatRoom({
                 participantName={msg.participant_name}
                 content={msg.content}
                 isUser={msg.participant_type === 'human'}
+                isHost={msg.participant_type === 'host'}
                 isInterrupt={msg.is_interrupt}
                 isSystem={msg.is_system}
                 avatarColor={msg.avatar_color}
@@ -256,12 +322,18 @@ export default function ChatRoom({
                 ? '讨论已结束'
                 : isLoading
                 ? '等待其他候选人发言...'
-                : '输入你的观点...'
+                : '输入你的观点... (或点击麦克风语音输入)'
             }
+            isListening={voice.isListening}
+            sttSupported={voice.sttSupported}
+            voiceTranscript={voice.transcript}
+            interimTranscript={voice.interimTranscript}
+            onStartListening={voice.startListening}
+            onStopListening={voice.stopListening}
           />
         </div>
 
-        {/* Participant sidebar */}
+        {/* Participant sidebar (right) */}
         <ParticipantList
           participants={participants}
           typingParticipantIds={typingIds}

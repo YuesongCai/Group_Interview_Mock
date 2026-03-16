@@ -71,6 +71,7 @@ export async function POST(
       })),
       phase_change: result.phaseChange || null,
       system_message: result.systemMessage || null,
+      host_message: result.hostMessage || null,
       session_ended: result.sessionEnded || false,
     });
   } catch (error) {
