@@ -15,22 +15,23 @@ export interface ModelRouting {
 }
 
 // Default model routing per agent role
+// Currently all agents route to GLM for initial bring-up
 export const MODEL_ROUTING: Record<AgentRole, ModelRouting> = {
   orchestrator: {
-    provider: 'minimax',
-    model: 'MiniMax-Text-01',
+    provider: 'glm',
+    model: 'glm-4-flash',
     temperature: 0.3,
     max_tokens: 500,
   },
   participant: {
-    provider: 'minimax',
-    model: 'MiniMax-Text-01',
+    provider: 'glm',
+    model: 'glm-4-flash',
     temperature: 0.8,
     max_tokens: 200,
   },
   evaluator: {
-    provider: 'deepseek',
-    model: 'deepseek-chat',
+    provider: 'glm',
+    model: 'glm-4-flash',
     temperature: 0.2,
     max_tokens: 3000,
   },

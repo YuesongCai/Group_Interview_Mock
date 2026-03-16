@@ -26,8 +26,8 @@ function getClient(provider: LLMProvider): OpenAI {
   return client;
 }
 
-// Fallback chain: minimax -> deepseek -> glm
-const FALLBACK_CHAIN: LLMProvider[] = ['minimax', 'deepseek', 'glm'];
+// Fallback chain: GLM-only for initial bring-up (only GLM API key available)
+const FALLBACK_CHAIN: LLMProvider[] = ['glm'];
 
 /**
  * LLM Gateway - unified interface for all LLM providers.
@@ -50,7 +50,9 @@ export async function llmComplete(
   for (const p of providers) {
     try {
       const client = getClient(p);
-      const actualModel = p === provider ? model : MODEL_ROUTING[role].model;
+      // When falling back to a different provider, use that provider's default model
+      const configs = getProviderConfigs();
+      const actualModel = p === provider ? model : configs[p].defaultModel;
 
       const completion = await client.chat.completions.create({
         model: actualModel,
