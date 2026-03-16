@@ -25,6 +25,7 @@ interface ParticipantInfo {
 
 interface SessionData {
   session_id: string;
+  phase?: string;
   topic: {
     title: string;
     description: string;
@@ -36,7 +37,7 @@ interface SessionData {
   participants: ParticipantInfo[];
   config: {
     duration_minutes: number;
-    phases: { opening: number; discussion: number; summary: number };
+    phases: { intro: number; briefing: number; opening: number; discussion: number; summary: number; qa: number };
   };
   opening: {
     host_welcome?: string;
@@ -210,6 +211,7 @@ export default function SessionPage() {
       config={sessionData.config}
       jdText={sessionData.jd_text}
       initialMessages={initialMessages}
+      initialPhase={sessionData.phase || 'intro'}
       onSessionEnd={handleSessionEnd}
     />
   );

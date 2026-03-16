@@ -17,14 +17,14 @@ export async function POST(
       );
     }
 
-    if (state.session.status === 'opening' || state.session.status === 'discussion' || state.session.status === 'summary') {
+    if (['opening', 'discussion', 'summary'].includes(state.session.status)) {
       return NextResponse.json(
         { error: { code: 'SESSION_ALREADY_STARTED', message: 'Session already in progress' } },
         { status: 409 }
       );
     }
 
-    // Reset stuck 'generating' status (previous attempt failed)
+    // Reset stuck 'generating' status
     if (state.session.status === 'generating') {
       state.session.status = 'created';
     }
@@ -34,10 +34,9 @@ export async function POST(
       state = await prepareSession(sessionId);
     }
 
-    // Step 2: Start session and get opening messages (host welcome + AI openings)
-    const { hostWelcome, aiResponses } = await startSession(sessionId);
+    // Step 2: Start session (intro phase: host welcome + AI self-introductions)
+    const { hostWelcome, aiIntros, phase } = await startSession(sessionId);
 
-    // Find host participant
     const hostParticipant = state.participants.find(
       (p) => (p as unknown as { is_host?: boolean }).is_host
     );
@@ -45,6 +44,7 @@ export async function POST(
     return NextResponse.json({
       session_id: sessionId,
       status: state.session.status,
+      phase,
       topic: state.topic,
       jd_text: state.session.jd_text,
       participants: state.participants.map(p => ({
@@ -63,7 +63,7 @@ export async function POST(
           display_name: hostParticipant.display_name,
           avatar_color: hostParticipant.avatar_color,
         } : null,
-        ai_responses: aiResponses.map(r => ({
+        ai_responses: aiIntros.map(r => ({
           participant_id: r.participant.id,
           participant_name: r.participant.display_name,
           content: r.content,

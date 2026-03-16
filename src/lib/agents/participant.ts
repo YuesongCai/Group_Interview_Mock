@@ -3,9 +3,12 @@ import type { PersonaCard, Message, SessionPhase, LLMMessage } from '@/lib/types
 
 function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
   const phaseInstructions: Record<SessionPhase, string> = {
-    opening: '现在是开场阶段，请简要阐述你对话题的初步看法，2-3句话即可。',
+    intro: '现在是自我介绍环节。请简要介绍你的名字、教育背景和相关工作经验。2-3句话，自然大方。',
+    briefing: '现在是材料阅读环节，你正在安静阅读案例材料。如果被问到可以简短回应。',
+    opening: '现在是开场发言阶段，请简要阐述你对案例的初步分析和核心观点，2-3句话即可。',
     discussion: '现在是自由讨论阶段，你可以同意、反对、补充或提出新的角度。保持简洁有力，2-4句话。',
     summary: '现在是总结阶段，请简要总结你在这次讨论中的核心观点和立场。',
+    qa: '现在是面试官追问环节。面试官可能会针对你的观点追问，请清晰有条理地回答。',
   };
 
   return `你是${persona.name}，正在参加一场群面（无领导小组讨论）。
@@ -28,10 +31,12 @@ function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
 6. 不要重复别人已经说过的观点，而是延伸或挑战
 
 【互动规则 - 极其重要】
-- 当有真人候选人（标记为【真人候选人】）发言时，你必须在回应中明确引用或回应他/她说的具体内容
-- 例如："刚才你提到了XXX，我觉得这个角度很好，不过..."、"你说的YYY让我想到..."、"我同意你关于ZZZ的看法，但我想补充..."
-- 不要泛泛回应，要让真人候选人感觉到你在认真听他/她说话并回应他/她的具体观点
-- 可以赞同、质疑、延伸、反驳真人候选人的观点，但必须具体点名内容`;
+- 讨论中有一位真人候选人（标记为【真人候选人】），你必须特别关注他/她的发言
+- 当真人候选人发言后，你必须在回应中明确提到他/她的名字并引用他/她说的具体内容
+- 例如："${persona.name === '陈思远' ? '刚才小明' : '刚才'}提到了XXX，我觉得这个角度很好，不过..."、"你说的YYY让我想到..."、"我同意你关于ZZZ的看法，但我想补充..."
+- 不要泛泛回应，要让真人候选人感觉到你在认真听他/她说话
+- 可以赞同、质疑、延伸、反驳真人候选人的观点，但必须具体点名内容
+- 偶尔可以直接@真人候选人的名字发问或寻求意见`;
 }
 
 /**
@@ -57,7 +62,7 @@ export async function generateParticipantResponse(
   // Extract the most recent human message for emphasis
   const lastHumanMessage = [...messages].reverse().find(m => m.participant_type === 'human');
   const echoHint = lastHumanMessage
-    ? `\n\n【重要 - 真人候选人最新发言】${lastHumanMessage.participant_name}: "${lastHumanMessage.content}"\n请在你的回应中明确回应上述内容，引用其中的具体观点或关键词。`
+    ? `\n\n【重要 - 真人候选人最新发言】${lastHumanMessage.participant_name}: "${lastHumanMessage.content}"\n你必须在回应中提到"${lastHumanMessage.participant_name}"的名字，并引用其中的具体观点或关键词。`
     : '';
 
   const userPrompt = `【讨论记录】
@@ -77,7 +82,7 @@ ${echoHint}
     temperature: getTemperature(persona),
   });
 
-  // Clean up response - remove any self-referential prefix like "陈思远："
+  // Clean up response — remove any self-referential prefix
   let content = response.content.trim();
   const namePrefix = `${persona.name}：`;
   const namePrefixAlt = `${persona.name}:`;
@@ -91,7 +96,6 @@ ${echoHint}
 }
 
 function getTemperature(persona: PersonaCard): number {
-  // Higher aggressiveness = slightly higher temperature for more varied responses
   const base = 0.7;
   const variation = persona.aggressiveness * 0.2;
   return base + variation;

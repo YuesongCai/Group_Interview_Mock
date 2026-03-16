@@ -41,6 +41,15 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface PhaseConfig {
+  intro: number;
+  briefing: number;
+  opening: number;
+  discussion: number;
+  summary: number;
+  qa: number;
+}
+
 interface ChatRoomProps {
   sessionId: string;
   topic: {
@@ -53,12 +62,24 @@ interface ChatRoomProps {
   participants: ParticipantInfo[];
   config: {
     duration_minutes: number;
-    phases: { opening: number; discussion: number; summary: number };
+    phases: PhaseConfig;
   };
   jdText?: string;
   initialMessages?: ChatMessage[];
+  initialPhase?: string;
   onSessionEnd: () => void;
 }
+
+const PHASE_LABELS: Record<string, string> = {
+  intro: '自我介绍',
+  briefing: '材料阅读',
+  opening: '开场发言',
+  discussion: '自由讨论',
+  summary: '总结陈述',
+  qa: '面试官追问',
+};
+
+const PHASE_ORDER = ['intro', 'briefing', 'opening', 'discussion', 'summary', 'qa'];
 
 export default function ChatRoom({
   sessionId,
@@ -67,11 +88,13 @@ export default function ChatRoom({
   config,
   jdText,
   initialMessages = [],
+  initialPhase = 'intro',
   onSessionEnd,
 }: ChatRoomProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [phase, setPhase] = useState<string>('opening');
+  const [phase, setPhase] = useState<string>(initialPhase);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
   const [typingIds, setTypingIds] = useState<string[]>([]);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [selectedPersona, setSelectedPersona] = useState<{
@@ -85,21 +108,19 @@ export default function ChatRoom({
   const proactiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProactiveFetchingRef = useRef(false);
 
-  // Voice I/O
   const voice = useVoice({ lang: 'zh-CN' });
 
-  // Auto-scroll to bottom
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // TTS: speak new AI/host messages
+  // TTS
   const lastMessageCountRef = useRef(initialMessages.length);
   useEffect(() => {
     if (!voice.ttsEnabled) return;
     const newMessages = messages.slice(lastMessageCountRef.current);
     lastMessageCountRef.current = messages.length;
-
     for (const msg of newMessages) {
       if (msg.participant_type !== 'human' && !msg.is_system) {
         voice.speak(msg.content, msg.participant_id);
@@ -111,13 +132,10 @@ export default function ChatRoom({
     setMessages(prev => [...prev, msg]);
   }, []);
 
-  // Deliver AI responses with typing indicators and staggered delays
   const deliverAiResponses = useCallback(
     async (responses: { participant_id: string; participant_name: string; content: string; delay_ms: number; is_interrupt: boolean; participant_type?: string }[]) => {
       for (const r of responses) {
         const participant = participants.find(p => p.id === r.participant_id);
-
-        // Show typing indicator
         setTypingIds(prev => [...prev, r.participant_id]);
         await new Promise(resolve => setTimeout(resolve, Math.min(r.delay_ms, 3000)));
         setTypingIds(prev => prev.filter(id => id !== r.participant_id));
@@ -138,16 +156,32 @@ export default function ChatRoom({
     [participants, addMessage]
   );
 
-  // Proactive AI speaking: aggressive participants talk on their own
+  // Proactive AI speaking (only during active discussion phases)
   const triggerProactive = useCallback(async () => {
     if (isProactiveFetchingRef.current || sessionEnded || isLoading) return;
-    isProactiveFetchingRef.current = true;
+    if (!['opening', 'discussion', 'summary'].includes(phase)) return;
 
+    isProactiveFetchingRef.current = true;
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/proactive`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/sessions/${sessionId}/proactive`, { method: 'POST' });
       const data = await res.json();
+
+      if (data.host_message) {
+        const hostP = participants.find(p => p.type === 'host');
+        if (hostP) {
+          addMessage({
+            id: crypto.randomUUID(),
+            participant_id: hostP.id,
+            participant_name: hostP.display_name,
+            participant_type: 'host',
+            content: data.host_message,
+            is_interrupt: false,
+            is_system: false,
+            avatar_color: hostP.avatar_color,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
 
       if (data.ai_responses?.length > 0) {
         await deliverAiResponses(data.ai_responses);
@@ -157,29 +191,58 @@ export default function ChatRoom({
     } finally {
       isProactiveFetchingRef.current = false;
     }
-  }, [sessionId, sessionEnded, isLoading, deliverAiResponses]);
+  }, [sessionId, sessionEnded, isLoading, phase, deliverAiResponses, addMessage, participants]);
 
-  // Reset proactive timer whenever messages change or user sends
   const resetProactiveTimer = useCallback(() => {
-    if (proactiveTimerRef.current) {
-      clearTimeout(proactiveTimerRef.current);
-    }
-    if (!sessionEnded) {
-      // After 12-20 seconds of user inactivity, AI speaks proactively
+    if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
+    if (!sessionEnded && ['opening', 'discussion', 'summary'].includes(phase)) {
       const delay = 12000 + Math.random() * 8000;
-      proactiveTimerRef.current = setTimeout(() => {
-        triggerProactive();
-      }, delay);
+      proactiveTimerRef.current = setTimeout(() => triggerProactive(), delay);
     }
-  }, [sessionEnded, triggerProactive]);
+  }, [sessionEnded, phase, triggerProactive]);
 
-  // Start/reset proactive timer when messages change
   useEffect(() => {
     resetProactiveTimer();
-    return () => {
-      if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current);
-    };
+    return () => { if (proactiveTimerRef.current) clearTimeout(proactiveTimerRef.current); };
   }, [messages.length, resetProactiveTimer]);
+
+  // Advance to next phase (button click)
+  const handleAdvancePhase = useCallback(async () => {
+    if (isAdvancing) return;
+    setIsAdvancing(true);
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/advance`, { method: 'POST' });
+      const data = await res.json();
+
+      if (data.phase) setPhase(data.phase);
+
+      if (data.host_message) {
+        const hostP = participants.find(p => p.type === 'host');
+        if (hostP) {
+          addMessage({
+            id: crypto.randomUUID(),
+            participant_id: hostP.id,
+            participant_name: hostP.display_name,
+            participant_type: 'host',
+            content: data.host_message,
+            is_interrupt: false,
+            is_system: false,
+            avatar_color: hostP.avatar_color,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (data.ai_responses?.length > 0) {
+        await deliverAiResponses(data.ai_responses);
+      }
+    } catch (error) {
+      console.error('Failed to advance phase:', error);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }, [sessionId, isAdvancing, participants, addMessage, deliverAiResponses]);
 
   // Send user message
   const handleSend = useCallback(async (content: string) => {
@@ -208,19 +271,18 @@ export default function ChatRoom({
 
       const data = await res.json();
 
-      // Host message (phase transitions, interjections)
       if (data.host_message) {
-        const hostParticipant = participants.find(p => p.type === 'host');
-        if (hostParticipant) {
+        const hostP = participants.find(p => p.type === 'host');
+        if (hostP) {
           addMessage({
             id: crypto.randomUUID(),
-            participant_id: hostParticipant.id,
-            participant_name: hostParticipant.display_name,
+            participant_id: hostP.id,
+            participant_name: hostP.display_name,
             participant_type: 'host',
             content: data.host_message,
             is_interrupt: false,
             is_system: false,
-            avatar_color: hostParticipant.avatar_color,
+            avatar_color: hostP.avatar_color,
             timestamp: new Date().toISOString(),
           });
         }
@@ -240,24 +302,10 @@ export default function ChatRoom({
         });
       }
 
-      if (data.phase_change) {
-        setPhase(data.phase_change);
-      }
+      if (data.phase_change) setPhase(data.phase_change);
 
       if (data.session_ended) {
         setSessionEnded(true);
-        const hostParticipant = participants.find(p => p.type === 'host');
-        addMessage({
-          id: crypto.randomUUID(),
-          participant_id: hostParticipant?.id || 'system',
-          participant_name: hostParticipant?.display_name || '系统',
-          participant_type: hostParticipant ? 'host' : 'ai',
-          content: '讨论时间到！感谢各位候选人的精彩讨论，现在进入评估环节...',
-          is_interrupt: false,
-          is_system: !hostParticipant,
-          avatar_color: hostParticipant?.avatar_color || '#666',
-          timestamp: new Date().toISOString(),
-        });
         onSessionEnd();
         return;
       }
@@ -275,21 +323,48 @@ export default function ChatRoom({
   const handleTimeUp = useCallback(() => {
     if (!sessionEnded) {
       setSessionEnded(true);
-      const hostParticipant = participants.find(p => p.type === 'host');
+      const hostP = participants.find(p => p.type === 'host');
       addMessage({
         id: crypto.randomUUID(),
-        participant_id: hostParticipant?.id || 'system',
-        participant_name: hostParticipant?.display_name || '系统',
-        participant_type: hostParticipant ? 'host' : 'ai',
+        participant_id: hostP?.id || 'system',
+        participant_name: hostP?.display_name || '系统',
+        participant_type: hostP ? 'host' : 'ai',
         content: '讨论时间到！',
         is_interrupt: false,
-        is_system: !hostParticipant,
-        avatar_color: hostParticipant?.avatar_color || '#666',
+        is_system: !hostP,
+        avatar_color: hostP?.avatar_color || '#666',
         timestamp: new Date().toISOString(),
       });
       onSessionEnd();
     }
   }, [sessionEnded, addMessage, onSessionEnd, participants]);
+
+  // Phase-specific placeholder text
+  const getPlaceholder = () => {
+    if (sessionEnded) return '讨论已结束';
+    if (isLoading) return '等待其他候选人发言...';
+    switch (phase) {
+      case 'intro': return '输入你的自我介绍（姓名、背景、经验）...';
+      case 'briefing': return '阅读材料中...准备好后点击"进入下一阶段"';
+      case 'opening': return '分享你对案例的初步想法和核心观点...';
+      case 'discussion': return '输入你的观点，回应其他候选人...';
+      case 'summary': return '总结你的核心观点和讨论结论...';
+      case 'qa': return '回答面试官的问题...';
+      default: return '输入你的观点...';
+    }
+  };
+
+  // Next phase button label
+  const getNextPhaseLabel = () => {
+    const idx = PHASE_ORDER.indexOf(phase);
+    const next = PHASE_ORDER[idx + 1];
+    if (!next) return null;
+    return `进入${PHASE_LABELS[next] || '下一阶段'}`;
+  };
+
+  // Show advance button for certain phases
+  const showAdvanceButton = ['intro', 'briefing'].includes(phase);
+  const nextLabel = getNextPhaseLabel();
 
   return (
     <div className={styles.chatRoom}>
@@ -299,7 +374,6 @@ export default function ChatRoom({
           <h2 className={styles.topicTitle}>{topic.title}</h2>
         </div>
         <div className={styles.headerControls}>
-          {/* TTS toggle */}
           {voice.ttsSupported && (
             <button
               className={`${styles.ttsToggle} ${voice.ttsEnabled ? styles.ttsActive : ''}`}
@@ -325,11 +399,7 @@ export default function ChatRoom({
             </button>
           )}
           {voice.isSpeaking && (
-            <button
-              className={styles.stopSpeakBtn}
-              onClick={voice.stopSpeaking}
-              title="停止播放"
-            >
+            <button className={styles.stopSpeakBtn} onClick={voice.stopSpeaking} title="停止播放">
               ■
             </button>
           )}
@@ -343,6 +413,23 @@ export default function ChatRoom({
         </div>
       </div>
 
+      {/* Phase indicator bar */}
+      <div className={styles.phaseBar}>
+        {PHASE_ORDER.map((p, i) => {
+          const isCurrent = p === phase;
+          const isPast = PHASE_ORDER.indexOf(phase) > i;
+          return (
+            <div
+              key={p}
+              className={`${styles.phaseStep} ${isCurrent ? styles.phaseStepActive : ''} ${isPast ? styles.phaseStepDone : ''}`}
+            >
+              <div className={styles.phaseStepDot} />
+              <span className={styles.phaseStepLabel}>{PHASE_LABELS[p]}</span>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Timer */}
       <PhaseTimer
         phase={phase}
@@ -351,17 +438,15 @@ export default function ChatRoom({
         onTimeUp={handleTimeUp}
       />
 
-      {/* Main area: Topic Sidebar | Messages | Participants */}
+      {/* Main area */}
       <div className={styles.mainArea}>
-        {/* Topic sidebar (left) */}
         <TopicSidebar topic={topic} jdText={jdText} />
 
-        {/* Messages */}
         <div className={styles.messagesArea}>
           <div className={styles.messagesList}>
             {messages.map(msg => {
-              const msgParticipant = participants.find(p => p.id === msg.participant_id);
-              const hasPersona = msgParticipant?.type === 'ai' && msgParticipant?.persona_card;
+              const msgP = participants.find(p => p.id === msg.participant_id);
+              const hasPersona = msgP?.type === 'ai' && msgP?.persona_card;
               return (
                 <MessageBubble
                   key={msg.id}
@@ -374,8 +459,8 @@ export default function ChatRoom({
                   avatarColor={msg.avatar_color}
                   timestamp={msg.timestamp}
                   onAvatarClick={hasPersona ? () => setSelectedPersona({
-                    persona: msgParticipant.persona_card!,
-                    avatarColor: msgParticipant.avatar_color,
+                    persona: msgP.persona_card!,
+                    avatarColor: msgP.avatar_color,
                   }) : undefined}
                 />
               );
@@ -383,16 +468,26 @@ export default function ChatRoom({
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Advance phase button */}
+          {showAdvanceButton && nextLabel && (
+            <div className={styles.advanceBar}>
+              <button
+                className={`btn btn-primary ${styles.advanceBtn}`}
+                onClick={handleAdvancePhase}
+                disabled={isAdvancing}
+              >
+                {isAdvancing ? '正在进入...' : nextLabel}
+              </button>
+              {phase === 'briefing' && (
+                <span className={styles.advanceHint}>仔细阅读左侧材料后，点击进入下一阶段</span>
+              )}
+            </div>
+          )}
+
           <MessageInput
             onSend={handleSend}
-            disabled={isLoading || sessionEnded}
-            placeholder={
-              sessionEnded
-                ? '讨论已结束'
-                : isLoading
-                ? '等待其他候选人发言...'
-                : '输入你的观点... (或点击麦克风语音输入)'
-            }
+            disabled={isLoading || sessionEnded || phase === 'briefing'}
+            placeholder={getPlaceholder()}
             isListening={voice.isListening}
             sttSupported={voice.sttSupported}
             voiceTranscript={voice.transcript}
@@ -402,7 +497,6 @@ export default function ChatRoom({
           />
         </div>
 
-        {/* Participant sidebar (right) */}
         <ParticipantList
           participants={participants}
           typingParticipantIds={typingIds}

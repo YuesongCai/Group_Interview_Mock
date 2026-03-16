@@ -17,20 +17,31 @@ export type SessionStatus =
   | 'paused'
   | 'abandoned';
 
-export type SessionPhase = 'opening' | 'discussion' | 'summary';
+export type SessionPhase = 'intro' | 'briefing' | 'opening' | 'discussion' | 'summary' | 'qa';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
+export type TopicStyle = 'case_study' | 'debate' | 'prioritization';
+
+export type DurationPreset = '20min' | '30min' | '45min' | '60min';
+
+export interface PhaseConfig {
+  intro: number;      // self-introductions
+  briefing: number;   // host presents topic + silent reading
+  opening: number;    // initial opinions
+  discussion: number; // free discussion
+  summary: number;    // summary statements
+  qa: number;         // host Q&A challenges
+}
+
 export interface SessionConfig {
   duration_minutes: number;
-  phases: {
-    opening: number;   // minutes
-    discussion: number;
-    summary: number;
-  };
+  phases: PhaseConfig;
   difficulty: Difficulty;
   participant_count: number;
   language: 'zh' | 'en';
+  topic_style: TopicStyle;
+  user_name: string;  // user's display name for the session
 }
 
 export interface Session {

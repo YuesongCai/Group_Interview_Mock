@@ -5,7 +5,7 @@ import { createSession, getAllSessions } from '@/lib/session/manager';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { jd_text, resume_text, difficulty, participant_count, language } = body;
+    const { jd_text, resume_text, difficulty, participant_count, language, duration_preset, topic_style, user_name } = body;
 
     if (!jd_text) {
       return NextResponse.json(
@@ -21,7 +21,9 @@ export async function POST(request: NextRequest) {
       difficulty: difficulty || 'medium',
       participant_count: participant_count || 4,
       language: language || 'zh',
-    });
+      topic_style: topic_style || 'case_study',
+      user_name: user_name || '你',
+    }, duration_preset || '30min');
 
     return NextResponse.json(
       {

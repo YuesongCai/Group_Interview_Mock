@@ -79,6 +79,84 @@
   background: var(--bg-secondary);
 }
 
+.phaseBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.phaseStep {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  transition: all 0.2s;
+}
+
+.phaseStepDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.phaseStepLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.phaseStepActive {
+  background: var(--accent-muted);
+}
+
+.phaseStepActive .phaseStepDot {
+  background: var(--accent);
+  width: 8px;
+  height: 8px;
+}
+
+.phaseStepActive .phaseStepLabel {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.phaseStepDone .phaseStepDot {
+  background: var(--success);
+}
+
+.phaseStepDone .phaseStepLabel {
+  color: var(--text-secondary);
+}
+
+.advanceBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+
+.advanceBtn {
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.advanceHint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .mainArea {
   display: flex;
   flex: 1;
