@@ -65,12 +65,16 @@ export async function generatePersonas(
     const cleaned = response.content.replace(/```json\n?|\n?```/g, '').trim();
     const personas = JSON.parse(cleaned) as PersonaCard[];
 
-    // Validate and fix aggressiveness based on difficulty
-    return personas.map((p, i) => ({
-      ...p,
-      aggressiveness: adjustAggressiveness(p.aggressiveness, difficulty),
-      personality_type: p.personality_type || selectedArchetypes[i],
-    }));
+    // Validate and fix fields — LLM output may have non-numeric aggressiveness
+    return personas.map((p, i) => {
+      const rawAgg = typeof p.aggressiveness === 'number' ? p.aggressiveness : parseFloat(String(p.aggressiveness));
+      const safeAgg = isNaN(rawAgg) ? 0.5 : rawAgg;
+      return {
+        ...p,
+        aggressiveness: adjustAggressiveness(safeAgg, difficulty),
+        personality_type: p.personality_type || selectedArchetypes[i],
+      };
+    });
   } catch {
     // Fallback: generate deterministic personas
     return generateFallbackPersonas(count, difficulty);

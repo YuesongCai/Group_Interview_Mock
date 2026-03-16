@@ -44,6 +44,14 @@ export async function llmComplete(
   const temperature = options?.temperature ?? routing.temperature;
   const max_tokens = options?.max_tokens ?? routing.max_tokens;
 
+  // Sanitize parameters — prevent NaN/invalid values from reaching the API
+  const safeTemperature = (typeof temperature === 'number' && !isNaN(temperature))
+    ? Math.max(0.01, Math.min(1.0, temperature))
+    : 0.7;
+  const safeMaxTokens = (typeof max_tokens === 'number' && !isNaN(max_tokens) && max_tokens > 0)
+    ? Math.floor(max_tokens)
+    : 1024;
+
   // Try primary provider, then fallback chain
   const providers = [provider, ...FALLBACK_CHAIN.filter(p => p !== provider)];
 
@@ -54,14 +62,16 @@ export async function llmComplete(
       const configs = getProviderConfigs();
       const actualModel = p === provider ? model : configs[p].defaultModel;
 
+      console.log(`[LLM Gateway] Calling ${p}/${actualModel} for role=${role}, temp=${safeTemperature}, max_tokens=${safeMaxTokens}`);
+
       const completion = await client.chat.completions.create({
         model: actualModel,
         messages: messages.map(m => ({
           role: m.role,
           content: m.content,
         })),
-        temperature,
-        max_tokens,
+        temperature: safeTemperature,
+        max_tokens: safeMaxTokens,
       });
 
       const choice = completion.choices[0];
@@ -74,7 +84,7 @@ export async function llmComplete(
         } : undefined,
       };
     } catch (error) {
-      console.error(`LLM call failed for provider ${p}:`, error);
+      console.error(`LLM call failed for provider ${p} (role=${role}, model=${model}):`, error);
       // Try next provider in fallback chain
       continue;
     }
@@ -97,14 +107,23 @@ export async function* llmStream(
 
   const client = getClient(provider);
 
+  const rawTemp = options?.temperature ?? routing.temperature;
+  const rawMaxTokens = options?.max_tokens ?? routing.max_tokens;
+  const safeTemp = (typeof rawTemp === 'number' && !isNaN(rawTemp))
+    ? Math.max(0.01, Math.min(1.0, rawTemp))
+    : 0.7;
+  const safeMax = (typeof rawMaxTokens === 'number' && !isNaN(rawMaxTokens) && rawMaxTokens > 0)
+    ? Math.floor(rawMaxTokens)
+    : 1024;
+
   const stream = await client.chat.completions.create({
     model,
     messages: messages.map(m => ({
       role: m.role,
       content: m.content,
     })),
-    temperature: options?.temperature ?? routing.temperature,
-    max_tokens: options?.max_tokens ?? routing.max_tokens,
+    temperature: safeTemp,
+    max_tokens: safeMax,
     stream: true,
   });
 

@@ -17,13 +17,16 @@ export async function POST(
       );
     }
 
-    if (state.session.status !== 'created' && state.session.status !== 'ready') {
-      if (state.session.status === 'opening' || state.session.status === 'discussion' || state.session.status === 'summary') {
-        return NextResponse.json(
-          { error: { code: 'SESSION_ALREADY_STARTED', message: 'Session already in progress' } },
-          { status: 409 }
-        );
-      }
+    if (state.session.status === 'opening' || state.session.status === 'discussion' || state.session.status === 'summary') {
+      return NextResponse.json(
+        { error: { code: 'SESSION_ALREADY_STARTED', message: 'Session already in progress' } },
+        { status: 409 }
+      );
+    }
+
+    // Reset stuck 'generating' status (previous attempt failed)
+    if (state.session.status === 'generating') {
+      state.session.status = 'created';
     }
 
     // Step 1: Generate topic and personas if not ready

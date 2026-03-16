@@ -19,7 +19,12 @@ import { DEFAULT_SESSION_CONFIG, AVATAR_COLORS } from './types';
 import type { SessionState } from './types';
 
 // In-memory session store (replace with Redis in production)
-const sessions = new Map<string, SessionState>();
+// Use globalThis to persist across Next.js dev mode module reloads
+const globalForSessions = globalThis as unknown as { __sessions: Map<string, SessionState> };
+if (!globalForSessions.__sessions) {
+  globalForSessions.__sessions = new Map<string, SessionState>();
+}
+const sessions = globalForSessions.__sessions;
 
 export function getSession(sessionId: string): SessionState | undefined {
   return sessions.get(sessionId);
