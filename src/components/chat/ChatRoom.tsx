@@ -64,6 +64,7 @@ interface ChatRoomProps {
     type?: string;
     background_material?: string;
     key_questions?: string[];
+    constraints?: string[];
   };
   participants: ParticipantInfo[];
   config: {

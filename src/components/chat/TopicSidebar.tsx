@@ -10,6 +10,7 @@ interface TopicSidebarProps {
     type?: string;
     background_material?: string;
     key_questions?: string[];
+    constraints?: string[];
   };
   jdText?: string;
 }
@@ -59,10 +60,21 @@ export default function TopicSidebar({ topic, jdText }: TopicSidebarProps) {
 
         {topic.key_questions && topic.key_questions.length > 0 && (
           <div className={styles.section}>
-            <h5 className={styles.sectionTitle}>关键问题</h5>
-            <ul className={styles.questionList}>
+            <h5 className={styles.sectionTitle}>讨论任务</h5>
+            <ol className={styles.questionList}>
               {topic.key_questions.map((q, i) => (
                 <li key={i} className={styles.questionItem}>{q}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {topic.constraints && topic.constraints.length > 0 && (
+          <div className={styles.section}>
+            <h5 className={styles.sectionTitle}>约束条件</h5>
+            <ul className={styles.questionList}>
+              {topic.constraints.map((c, i) => (
+                <li key={i} className={styles.questionItem}>{c}</li>
               ))}
             </ul>
           </div>

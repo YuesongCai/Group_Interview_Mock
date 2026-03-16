@@ -7,6 +7,7 @@ export interface SessionState {
   topic: Topic | null;
   startedAt: number | null; // timestamp ms
   phaseStartedAt: number | null;
+  surpriseDelivered?: boolean; // Whether mid-discussion surprise info has been delivered
 }
 
 // Duration presets with phase breakdowns

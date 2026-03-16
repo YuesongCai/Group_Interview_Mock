@@ -289,10 +289,20 @@ export async function advancePhase(sessionId: string): Promise<{
   if (nextPhase === 'briefing') {
     // Host introduces topic and rules, starts reading time
     const topic = state.topic;
+    const constraintBlock = topic.constraints && topic.constraints.length > 0
+      ? (isEn
+          ? `\n\n**Constraints:**\n${topic.constraints.map(c => `- ${c}`).join('\n')}`
+          : `\n\n**约束条件：**\n${topic.constraints.map(c => `- ${c}`).join('\n')}`)
+      : '';
+    const taskBlock = topic.key_questions && topic.key_questions.length > 0
+      ? (isEn
+          ? `\n\n**Discussion Tasks:**\n${topic.key_questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
+          : `\n\n**讨论任务：**\n${topic.key_questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`)
+      : '';
     if (isEn) {
-      hostMessage = `Great, thank you all for the introductions!\n\nNow let me present today's case:\n\n**${topic.title}**\n\n${topic.description}\n\n${topic.background_material ? `**Background Material:**\n${topic.background_material}\n\n` : ''}Please take a moment to read through the material carefully. You'll have ${state.session.config.phases.briefing} minutes to prepare your thoughts before we begin the discussion.`;
+      hostMessage = `Great, thank you all for the introductions!\n\nNow let me present today's case:\n\n**${topic.title}**\n\n${topic.description}\n\n${topic.background_material ? `**Background Material:**\n${topic.background_material}` : ''}${taskBlock}${constraintBlock}\n\nPlease take a moment to read through the material carefully. You'll have ${state.session.config.phases.briefing} minutes to prepare your thoughts before we begin the discussion.`;
     } else {
-      hostMessage = `好的，感谢大家的自我介绍！\n\n现在我来介绍今天的讨论案例：\n\n**${topic.title}**\n\n${topic.description}\n\n${topic.background_material ? `**背景材料：**\n${topic.background_material}\n\n` : ''}请大家仔细阅读材料，你们有${state.session.config.phases.briefing}分钟的准备时间。准备好后我们开始正式讨论。`;
+      hostMessage = `好的，感谢大家的自我介绍！\n\n现在我来介绍今天的讨论案例：\n\n**${topic.title}**\n\n${topic.description}\n\n${topic.background_material ? `**背景材料：**\n${topic.background_material}` : ''}${taskBlock}${constraintBlock}\n\n请大家仔细阅读左侧材料，你们有${state.session.config.phases.briefing}分钟的准备时间。准备好后我们开始正式讨论。`;
     }
     if (host) pushHostMessage(state, host, hostMessage, 'briefing');
 
@@ -541,6 +551,24 @@ export async function handleUserMessage(
       } catch {
         // Skip interjection on failure
       }
+    }
+  }
+
+  // Deliver surprise info mid-discussion if threshold reached
+  if (effectivePhase === 'discussion' && !state.surpriseDelivered &&
+      state.topic.surprise_info && state.topic.surprise_trigger) {
+    const discussionMsgCount = state.messages.filter(m => m.phase === 'discussion').length;
+    if (discussionMsgCount >= state.topic.surprise_trigger && host) {
+      state.surpriseDelivered = true;
+      const lang = state.session.config.language;
+      const surprisePrefix = lang === 'en' ? '**[Breaking Update]** ' : '**【最新消息】** ';
+      const surpriseContent = surprisePrefix + state.topic.surprise_info;
+      if (!hostMessage) {
+        hostMessage = surpriseContent;
+      } else {
+        hostMessage += '\n\n' + surpriseContent;
+      }
+      pushHostMessage(state, host, surpriseContent, effectivePhase);
     }
   }
 

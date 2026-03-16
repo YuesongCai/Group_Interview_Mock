@@ -62,12 +62,19 @@ export interface Session {
 
 export type TopicType = 'case_study' | 'debate' | 'prioritization';
 
+// How closely the topic maps to the JD's actual industry
+export type TopicMappingType = 'direct' | 'semi_direct' | 'indirect';
+
 export interface Topic {
   title: string;
-  description: string;
+  description: string;  // Core question (1-2 sentences)
   type: TopicType;
-  background_material?: string;
-  key_questions?: string[];
+  mapping_type?: TopicMappingType;
+  background_material?: string;  // 2-3 paragraphs: company, challenge, market
+  key_questions?: string[];      // 2-3 task requirements
+  constraints?: string[];        // Budget, timeline, max options etc.
+  surprise_info?: string;        // Mid-discussion twist (new info, email, data update)
+  surprise_trigger?: number;     // Message count threshold to deliver surprise (e.g. 15)
 }
 
 // --- Participants ---

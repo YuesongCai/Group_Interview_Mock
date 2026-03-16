@@ -37,6 +37,7 @@ interface SessionData {
     type?: string;
     background_material?: string;
     key_questions?: string[];
+    constraints?: string[];
   };
   jd_text?: string;
   participants: ParticipantInfo[];
