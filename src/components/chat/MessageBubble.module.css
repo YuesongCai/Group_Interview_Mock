@@ -115,6 +115,66 @@
   border-bottom-left-radius: 4px;
 }
 
+/* Thought bubble toggle — small icon inside AI message bubble */
+.thoughtToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 0 0 6px;
+  opacity: 0.35;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.thoughtToggle:hover {
+  opacity: 0.9;
+  transform: scale(1.2);
+}
+
+/* Thought bubble — revealed inner monologue */
+.thoughtBubble {
+  position: relative;
+  margin-top: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px dashed rgba(139, 92, 246, 0.25);
+  border-radius: 8px;
+  font-style: italic;
+  animation: thoughtReveal 0.3s ease;
+}
+
+.thoughtLabel {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(139, 92, 246, 0.7);
+  background: rgba(139, 92, 246, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  font-style: normal;
+  letter-spacing: 0.5px;
+}
+
+@keyframes thoughtReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .systemMessage {
   display: flex;
   justify-content: center;

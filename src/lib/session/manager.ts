@@ -419,7 +419,7 @@ export async function handleUserMessage(
   sessionId: string,
   content: string
 ): Promise<{
-  aiResponses: { participant: Participant; content: string; delay_ms: number; is_interrupt: boolean }[];
+  aiResponses: { participant: Participant; content: string; delay_ms: number; is_interrupt: boolean; inner_monologue?: string }[];
   phaseChange?: SessionPhase;
   systemMessage?: string;
   hostMessage?: string;
@@ -590,7 +590,7 @@ export async function handleUserMessage(
 
   // Generate AI responses sequentially (QPS limit)
   // Each response sees previous responder's message (already pushed to state.messages)
-  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
+  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean; inner_monologue?: string } | null)[] = [];
   if (!state.innerStates) state.innerStates = {};
 
   for (const r of decision.responders) {
@@ -624,20 +624,23 @@ export async function handleUserMessage(
     };
     state.messages.push(message);
 
-    // Generate inner monologue async (fire-and-forget, non-blocking)
-    generateInnerMonologue(participant.persona_card, state.messages, aiContent)
-      .then(monologue => {
-        if (monologue) {
-          state.innerStates![participant.id] = monologue;
-        }
-      })
-      .catch(() => { /* non-critical */ });
+    // Generate inner monologue — await it so we can return it to the frontend
+    let monologue: string | undefined;
+    try {
+      monologue = await generateInnerMonologue(participant.persona_card, state.messages, aiContent) || undefined;
+      if (monologue) {
+        state.innerStates[participant.id] = monologue;
+      }
+    } catch {
+      // Non-critical
+    }
 
     aiResponses.push({
       participant,
       content: aiContent,
       delay_ms: r.delay_ms,
       is_interrupt: r.is_interrupt,
+      inner_monologue: monologue,
     });
   }
 
@@ -655,7 +658,7 @@ export async function handleUserMessage(
 export async function generateProactiveMessages(
   sessionId: string
 ): Promise<{
-  aiResponses: { participant: Participant; content: string; delay_ms: number; is_interrupt: boolean }[];
+  aiResponses: { participant: Participant; content: string; delay_ms: number; is_interrupt: boolean; inner_monologue?: string }[];
   hostMessage?: string;
 }> {
   const state = sessions.get(sessionId);
@@ -690,7 +693,7 @@ export async function generateProactiveMessages(
   const lastMessages = state.messages.slice(-5);
   const lastSpeakers = new Set(lastMessages.map(m => m.participant_id));
 
-  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
+  const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean; inner_monologue?: string } | null)[] = [];
 
   if (!state.innerStates) state.innerStates = {};
 
@@ -722,18 +725,21 @@ export async function generateProactiveMessages(
     };
     state.messages.push(message);
 
-    // Generate inner monologue async
-    generateInnerMonologue(speaker.persona_card, state.messages, content)
-      .then(monologue => {
-        if (monologue) state.innerStates![speaker.id] = monologue;
-      })
-      .catch(() => {});
+    // Generate inner monologue — await for frontend display
+    let monologue: string | undefined;
+    try {
+      monologue = await generateInnerMonologue(speaker.persona_card, state.messages, content) || undefined;
+      if (monologue) {
+        state.innerStates[speaker.id] = monologue;
+      }
+    } catch { /* non-critical */ }
 
     aiResponses.push({
       participant: speaker,
       content,
       delay_ms: 1000 + Math.random() * 2000,
       is_interrupt: true,
+      inner_monologue: monologue,
     });
   }
 

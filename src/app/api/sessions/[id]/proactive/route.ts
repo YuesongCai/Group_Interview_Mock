@@ -24,6 +24,7 @@ export async function POST(
         content: r.content,
         delay_ms: r.delay_ms,
         is_interrupt: r.is_interrupt,
+        inner_monologue: r.inner_monologue || null,
       })),
       host_message: result.hostMessage || null,
     });

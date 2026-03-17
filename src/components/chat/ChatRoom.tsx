@@ -49,6 +49,7 @@ interface ChatMessage {
   is_system: boolean;
   avatar_color: string;
   timestamp: string;
+  inner_monologue?: string;
 }
 
 interface PhaseConfig {
@@ -144,7 +145,7 @@ export default function ChatRoom({
   }, []);
 
   const deliverAiResponses = useCallback(
-    async (responses: { participant_id: string; participant_name: string; content: string; delay_ms: number; is_interrupt: boolean; participant_type?: string }[]) => {
+    async (responses: { participant_id: string; participant_name: string; content: string; delay_ms: number; is_interrupt: boolean; participant_type?: string; inner_monologue?: string | null }[]) => {
       for (const r of responses) {
         const participant = participants.find(p => p.id === r.participant_id);
         setTypingIds(prev => [...prev, r.participant_id]);
@@ -161,6 +162,7 @@ export default function ChatRoom({
           is_system: false,
           avatar_color: participant?.avatar_color || '#666',
           timestamp: new Date().toISOString(),
+          inner_monologue: r.inner_monologue || undefined,
         });
       }
     },
@@ -469,6 +471,7 @@ export default function ChatRoom({
                   isSystem={msg.is_system}
                   avatarColor={msg.avatar_color}
                   timestamp={msg.timestamp}
+                  innerMonologue={msg.inner_monologue}
                   onAvatarClick={hasPersona ? () => setSelectedPersona({
                     persona: msgP.persona_card!,
                     avatarColor: msgP.avatar_color,

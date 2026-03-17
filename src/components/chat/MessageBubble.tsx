@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import styles from './MessageBubble.module.css';
 
-interface MessageBubbleProps {
+export interface MessageBubbleProps {
   participantName: string;
   content: string;
   isUser: boolean;
@@ -11,6 +12,7 @@ interface MessageBubbleProps {
   isSystem: boolean;
   avatarColor: string;
   timestamp: string;
+  innerMonologue?: string;
   onAvatarClick?: () => void;
 }
 
@@ -23,8 +25,11 @@ export default function MessageBubble({
   isSystem,
   avatarColor,
   timestamp,
+  innerMonologue,
   onAvatarClick,
 }: MessageBubbleProps) {
+  const [showThought, setShowThought] = useState(false);
+
   if (isSystem) {
     return (
       <div className={styles.systemMessage}>
@@ -71,7 +76,22 @@ export default function MessageBubble({
         </div>
         <div className={`${styles.bubble} ${bubbleClass}`}>
           {content}
+          {innerMonologue && (
+            <button
+              className={styles.thoughtToggle}
+              onClick={() => setShowThought(prev => !prev)}
+              title="偷看内心想法"
+            >
+              💭
+            </button>
+          )}
         </div>
+        {showThought && innerMonologue && (
+          <div className={styles.thoughtBubble}>
+            <span className={styles.thoughtLabel}>内心OS</span>
+            {innerMonologue}
+          </div>
+        )}
       </div>
     </div>
   );
