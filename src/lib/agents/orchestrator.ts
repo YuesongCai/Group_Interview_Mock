@@ -2,7 +2,6 @@ import { llmComplete } from '@/lib/llm/gateway';
 import type {
   Message,
   Participant,
-  PersonaCard,
   SessionPhase,
   SessionConfig,
   Topic,
@@ -38,7 +37,7 @@ ${'='.repeat(50)}
 "我这个判断是基于B端经验，你们有没有看过WEF自己的数据？成员参与度现在什么状态？"
 给用户一个"可以接、也可以不接"的钩子。
 
-规则4：instruction必须告诉AI"你的发言不超过80字/4句话"
+规则4：instruction必须告诉AI"发言4-5句，120-150字"
 
 规则5：每个instruction必须包含发言类型标签
 - [表达判断] — 说出你的结论，不问问题。适用于：dominant_leader, industry_insider, silent_observer
@@ -121,8 +120,8 @@ export async function getOrchestratorDecision(
       }
 
       // Append length constraint if not present
-      if (!r.instruction.includes('80字') && !r.instruction.includes('4句') && !r.instruction.includes('短句')) {
-        r.instruction += ' 不超过80字/4句短句。';
+      if (!r.instruction.includes('120') && !r.instruction.includes('150') && !r.instruction.includes('4-5句')) {
+        r.instruction += ' 4-5句，120-150字。';
       }
 
       // Ensure speech type label is present
@@ -149,7 +148,7 @@ export async function getOrchestratorDecision(
       if (lastP) {
         const target = messages.slice(-3).find(m => m.participant_name !== lastP.display_name);
         if (target) {
-          last.instruction = `追问${target.participant_name}："${target.content.substring(0, 40)}"中的一个具体假设——这个成立吗？用你的背景来反驳或追问。不超过80字/4句。`;
+          last.instruction = `追问${target.participant_name}："${target.content.substring(0, 40)}"中的一个具体假设——这个成立吗？用你的背景来反驳或追问。4-5句，120-150字。`;
         }
       }
     }
@@ -321,26 +320,26 @@ function enhanceInstruction(
   const archetype = participant.persona_card?.personality_type;
   const lastOther = [...messages].reverse().find(m => m.participant_id !== participant.id);
 
-  if (!lastOther) return '分享你的核心观点，不超过80字。';
+  if (!lastOther) return '分享你的核心观点，4-5句，120-150字。';
 
   const targetName = lastOther.participant_name;
   const targetContent = lastOther.content.substring(0, 50);
 
   switch (archetype) {
     case 'dominant_leader':
-      return `[表达判断] 接过${targetName}说的"${targetContent}"，用你的框架重新组织，给出你的结论。不超过80字/4句。`;
+      return `[表达判断] 接过${targetName}说的"${targetContent}"，用你的框架重新组织，给出你的结论。4-5句，120-150字。`;
     case 'analytical_challenger':
-      return `[反驳追问] 追问${targetName}说的"${targetContent}"中的一个具体假设——给出你的理由和替代判断。不超过80字/4句。`;
+      return `[反驳追问] 追问${targetName}说的"${targetContent}"中的一个具体假设——给出你的理由和替代判断。4-5句，120-150字。`;
     case 'industry_insider':
-      return `[表达判断] 用你的行业经验反驳或验证${targetName}关于"${targetContent}"的判断。给出一个具体数据或案例结论。不超过80字/4句。`;
+      return `[表达判断] 用你的行业经验反驳或验证${targetName}关于"${targetContent}"的判断。给出一个具体数据或案例结论。4-5句，120-150字。`;
     case 'strategic_integrator':
-      return `[整合收尾] 把${targetName}的观点和之前的讨论做整合——共识在哪？分歧在哪？给出你的方向判断。不超过80字/4句。`;
+      return `[整合收尾] 把${targetName}的观点和之前的讨论做整合——共识在哪？分歧在哪？给出你的方向判断。4-5句，120-150字。`;
     case 'quant_thinker':
-      return `[反驳追问] 对${targetName}的"${targetContent}"做量化质疑——给出你的数据拆解和结论。不超过80字/4句。`;
+      return `[反驳追问] 对${targetName}的"${targetContent}"做量化质疑——给出你的数据拆解和结论。4-5句，120-150字。`;
     case 'silent_observer':
-      return `[表达判断] 指出关于"${targetContent}"的讨论中所有人忽略的一个矛盾或前提错误。不超过80字/4句。`;
+      return `[表达判断] 指出关于"${targetContent}"的讨论中所有人忽略的一个矛盾或前提错误。4-5句，120-150字。`;
     default:
-      return `[表达判断] 直接回应${targetName}的"${targetContent}"，加入你自己的判断。不超过80字/4句。`;
+      return `[表达判断] 直接回应${targetName}的"${targetContent}"，加入你自己的判断。4-5句，120-150字。`;
   }
 }
 
@@ -382,7 +381,10 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
 }
 
 /**
- * Opening phase instructions — TYPE-aware.
+ * Opening phase instructions — THREE-WAVE framework design.
+ * Wave 1 (dominant_leader, industry_insider): Propose framework, set direction
+ * Wave 2 (analytical_challenger, quant_thinker): Challenge framework, add conditions
+ * Wave 3 (strategic_integrator, silent_observer): Integrate, fill blind spots
  */
 export function getOpeningInstructions(
   participants: Participant[],
@@ -390,46 +392,83 @@ export function getOpeningInstructions(
 ): OrchestratorDecision {
   const aiParticipants = participants.filter(p => p.type === 'ai');
 
-  const sorted = [...aiParticipants].sort((a, b) =>
-    (b.persona_card?.aggressiveness || 0) - (a.persona_card?.aggressiveness || 0)
-  );
+  const wave1Types = ['dominant_leader', 'industry_insider'];
+  const wave2Types = ['analytical_challenger', 'quant_thinker'];
+
+  // Extract topic numbers for opening references
+  const topicNumbers = extractQuickNumbers(topic);
 
   return {
-    responders: sorted.map((p, i) => {
-      const archetype = p.persona_card?.personality_type;
+    responders: aiParticipants.map((p) => {
+      const archetype = p.persona_card?.personality_type || '';
+      const isWave1 = wave1Types.includes(archetype);
+      const isWave2 = wave2Types.includes(archetype);
       let instruction: string;
 
-      switch (archetype) {
-        case 'dominant_leader':
-          instruction = `抢先开场。定框架——"核心问题是X，我建议分两步讨论"。不超过3句话/60字。`;
-          break;
-        case 'analytical_challenger':
-          instruction = `指出题目中一个关键假设需要验证。不给方案，先追问前提。2-3句。`;
-          break;
-        case 'industry_insider':
-          instruction = `用行业经验给一个其他人不知道的insight。"我做过类似项目，有个坑是——"。2-3句。`;
-          break;
-        case 'strategic_integrator':
-          instruction = `简短说初步想法，不展开。在观察。1-2句。`;
-          break;
-        case 'quant_thinker':
-          instruction = `抓住题目数据做快速拆解。"基准数据是X，gap是Y"。2句。`;
-          break;
-        case 'silent_observer':
-          instruction = `说一句你注意到的点，不展开。1句。`;
-          break;
-        default:
-          instruction = `分享初步想法。2-3句。`;
+      if (isWave1) {
+        if (archetype === 'dominant_leader') {
+          instruction = `[表达判断] 你是第一个开口的。
+任务：
+1. 用自己的话重新定义这道题的核心问题（不是复述题目，是你的解读）
+2. 说明你认为优先考虑哪个方向，给1个最重要的理由
+3. 提出讨论框架——"我建议我们先看X再看Y"
+
+发言4-5句，120-140字。要有明确立场，不能模棱两可。
+${topicNumbers ? `【题目数据可用】${topicNumbers}` : ''}`;
+        } else {
+          // industry_insider
+          instruction = `[表达判断] 你是第二个开口，前面dominant_leader提了框架。
+任务：
+1. 用你的行业直觉对刚才那个框架补充一个其他人不知道的坑或insight
+2. 说明你支持或反对哪个方向，理由要有具体依据
+3. 不要重复前面说的，要添加新信息
+
+发言4-5句，100-120字。
+${topicNumbers ? `【题目数据可用】${topicNumbers}` : ''}`;
+        }
+      } else if (isWave2) {
+        instruction = `[反驳追问] 前面已经有人提了框架和方向，你来质疑。
+任务：
+1. 指出前面某个具体判断的前提有问题——"等等，这个成立的条件是什么？"
+2. 提出一个被忽略的关键因素
+3. 给出你自己修正后的判断（不只是质疑，要有自己的答案）
+
+发言4-5句，100-120字。必须直接点名回应前面某人说的某句话。
+${topicNumbers ? `【可以用数字质疑】${topicNumbers}` : ''}`;
+      } else {
+        // Wave 3: strategic_integrator, silent_observer
+        instruction = `[整合收尾] 前面已经有争论了，你来做一个有价值的补充。
+任务：
+1. 整合一下目前的共识是什么（一句话）
+2. 补充一个大家都没提到但很重要的角度
+3. 说明你倾向哪个方向，为什么
+
+发言3-4句，80-100字。不要重复前面的观点，要有增量。`;
       }
+
+      // Three-wave delay: wave 1 fastest, wave 2 medium, wave 3 slowest
+      // Random offset within each wave to feel natural
+      const waveDelay = isWave1 ? 0 : isWave2 ? 5000 : 10000;
+      const randomOffset = Math.random() * 2000;
 
       return {
         participant_id: p.id,
         instruction,
-        delay_ms: i === 0 ? 1500 : 2500 + i * 2500,
-        is_interrupt: false,
+        delay_ms: waveDelay + randomOffset + 1000,
+        is_interrupt: archetype === 'dominant_leader',
       };
     }),
   };
+}
+
+/**
+ * Quick extraction of 2-3 key numbers from topic for opening references.
+ */
+function extractQuickNumbers(topic: Topic): string {
+  const source = topic.background_material || topic.description || '';
+  const pattern = /[^。！？\n]*\d+[%％亿万元个家条倍]+[^。！？\n]*/g;
+  const matches = source.match(pattern) || [];
+  return matches.slice(0, 3).join('；');
 }
 
 /**
@@ -538,7 +577,7 @@ ${openIssueNote}${echoWarning}${userHookNote}${questionOverload}${echoTracker}${
 1. 以发言类型标签开头：[表达判断]/[反驳追问]/[整合收尾]/[提问推进]
 2. 指定"回应谁说的什么"（必须引用前面某人的具体话）
 3. 指定方式（追问/反驳/量化/整合/纠正）
-4. 包含"不超过80字/4句"
+4. 包含"4-5句，120-150字"
 5. 至少1人要challenge/追问
 6. 大部分用[表达判断]或[反驳追问]，[提问推进]每3-4轮最多1次
 7. instruction必须要求AI引用至少1个具体数字或事实`;
@@ -623,10 +662,10 @@ function findOpenIssue(messages: Message[]): string | null {
 }
 
 function getProgressNote(round: number): string {
-  if (round <= 1) return '提出方向/假设。各人亮核心观点，不需要达成共识。';
-  if (round <= 2) return '补充或质疑。针对第1轮的方向进行追问和碰撞。';
-  if (round <= 3) return '深化。用数据/案例/经验来解决具体分歧。';
-  if (round <= 4) return '整合。综合前面的讨论，收拢方向。有人该做总结了。';
+  if (round <= 1) return '框架建立期。有人已提了方向——需要有人质疑或补充框架，不要直接跳到行动计划。在框架上加条件、加数据、加质疑。';
+  if (round <= 2) return '深化分歧。框架基本确定，现在深入具体判断。正面回应分歧，给出有数据/逻辑支撑的判断。';
+  if (round <= 3) return '解决分歧。用数据/案例/逻辑来解决具体分歧点。不能还在"两边都有道理"的状态。';
+  if (round <= 4) return '收拢方向。综合前面的讨论做整合，给出有倾向性的结论。';
   return '收尾。必须有人做最终整合，不能还在发散。';
 }
 
@@ -635,8 +674,8 @@ function getProgressNote(round: number): string {
 // ============================================================
 
 /**
- * Enrich an instruction with a "material package" — CV highlight, topic data, and user insight.
- * This gives AI concrete ammunition to support their stance, not just direction.
+ * Enrich an instruction with topic data and recent user insight.
+ * CV is NOT injected here — CV is the persona's internalized lens, not a per-turn citation.
  */
 function buildInstructionWithMaterial(
   baseInstruction: string,
@@ -649,42 +688,31 @@ function buildInstructionWithMaterial(
 
   const parts: string[] = [baseInstruction];
 
-  // 1. Relevant CV highlight
-  const cvHighlight = getRelevantCVHighlight(persona, baseInstruction);
-  if (cvHighlight) {
-    parts.push(`【你的素材】你的经验："${cvHighlight}"——用这个来支撑你的观点。`);
-  }
-
-  // 2. Relevant topic data point
+  // 1. Topic data — concrete numbers to reference
   const topicData = getRelevantTopicData(topic, baseInstruction);
   if (topicData) {
-    parts.push(`【数据弹药】${topicData}——引用这个数字来让你的发言有根据。`);
+    parts.push(`【数据弹药】${topicData}——发言里引用这个数字让观点有根据。`);
   }
 
-  // 3. Recent human insight — what the user said that's worth building on
+  // 2. User insight — only if user spoke recently (within last 4 messages)
   const humanInsight = getRecentHumanInsight(messages);
   if (humanInsight) {
-    parts.push(`【用户观点】${humanInsight.name}说过："${humanInsight.content}"——如果相关，回应或延伸这个点。`);
+    const humanMsgAge = getHumanMsgAge(messages);
+    if (humanMsgAge <= 4) {
+      parts.push(`【回应用户】${humanInsight.name}刚说："${humanInsight.content}"——如果相关，回应或build on这个点。`);
+    }
   }
 
   return parts.join('\n');
 }
 
-/**
- * Find the most relevant CV highlight for the current instruction context.
- */
-function getRelevantCVHighlight(persona: PersonaCard, instruction: string): string | null {
-  if (!persona.cv_highlights || persona.cv_highlights.length === 0) return null;
-
-  // Try to find a highlight that has content overlap with the instruction
-  for (const highlight of persona.cv_highlights) {
-    if (hasContentOverlap(highlight, instruction)) {
-      return highlight;
+function getHumanMsgAge(messages: Message[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].participant_type === 'human') {
+      return messages.length - 1 - i;
     }
   }
-
-  // Fallback: return the first highlight (most prominent)
-  return persona.cv_highlights[0] || null;
+  return 999;
 }
 
 /**
@@ -851,14 +879,14 @@ function buildUserEchoInstruction(
 
   switch (archetype) {
     case 'analytical_challenger':
-      return `${speechType} 直接回应${userName}说的"${userContent}"——追问一个关键假设，然后给出你的替代判断。不超过80字/4句。`;
+      return `${speechType} 直接回应${userName}说的"${userContent}"——追问一个关键假设，然后给出你的替代判断。4-5句，120-150字。`;
     case 'industry_insider':
-      return `${speechType} 用你的行业经验回应${userName}的观点"${userContent}"——验证或纠正，给出具体结论。不超过80字/4句。`;
+      return `${speechType} 用你的行业经验回应${userName}的观点"${userContent}"——验证或纠正，给出具体结论。4-5句，120-150字。`;
     case 'quant_thinker':
-      return `${speechType} 对${userName}说的"${userContent}"做量化拆解——给出你的数据判断。不超过80字/4句。`;
+      return `${speechType} 对${userName}说的"${userContent}"做量化拆解——给出你的数据判断。4-5句，120-150字。`;
     case 'strategic_integrator':
-      return `[整合收尾] 整合${userName}的观点"${userContent}"和前面讨论的方向——给出你的综合判断。不超过80字/4句。`;
+      return `[整合收尾] 整合${userName}的观点"${userContent}"和前面讨论的方向——给出你的综合判断。4-5句，120-150字。`;
     default:
-      return `${speechType} 回应${userName}的观点"${userContent}"——先接住这个点，然后加入你自己的判断。不超过80字/4句。`;
+      return `${speechType} 回应${userName}的观点"${userContent}"——先接住这个点，然后加入你自己的判断。4-5句，120-150字。`;
   }
 }
