@@ -1,5 +1,22 @@
 import { llmComplete } from '@/lib/llm/gateway';
-import type { PersonaCard, Message, SessionPhase, LLMMessage } from '@/lib/types';
+import type { PersonaCard, Message, SessionPhase, LLMMessage, Topic } from '@/lib/types';
+
+/**
+ * Extract key data points from topic material for injection into participant prompts.
+ * Grabs sentences containing numbers/percentages/amounts.
+ */
+export function extractTopicKeyData(topic: Topic): string {
+  const source = [topic.background_material || '', topic.description || ''].join('\n');
+  // Match sentences containing numbers, percentages, amounts
+  const numberPattern = /[^。！？\n]*\d+[%％亿万元个家条倍年月天]+[^。！？\n]*/g;
+  const matches = source.match(numberPattern) || [];
+  // Also grab constraint data
+  const constraints = (topic.constraints || []).filter(c => /\d/.test(c));
+  const all = [...matches, ...constraints].map(s => s.trim()).filter(Boolean);
+  // Deduplicate and limit
+  const unique = Array.from(new Set(all)).slice(0, 6);
+  return unique.length > 0 ? unique.join('\n') : '';
+}
 
 /**
  * TYPE-specific behavioral instructions — includes default speech type.
@@ -137,6 +154,28 @@ function getSpeechStyleConstraints(type: string): string {
   }
 }
 
+/**
+ * Per-type data interpretation lens — HOW each type reads numbers.
+ */
+function getDataInterpretationLens(type: string): string {
+  switch (type) {
+    case 'dominant_leader':
+      return `你看数据的方式：抓最大的gap，立刻推导"所以我们应该做X"。用数字支撑结论，不纠结数字本身。`;
+    case 'analytical_challenger':
+      return `你看数据的方式：先问"样本是什么"、"和谁比"。数字没有context就是无效的。`;
+    case 'industry_insider':
+      return `你看数据的方式：和你做过的项目对比。"这个数字在行业里算什么水平"、"我上一个项目是X，这里是Y，说明..."`;
+    case 'strategic_integrator':
+      return `你看数据的方式：数字之间的关系比数字本身重要。"A和B放在一起看，说明的其实是C"。`;
+    case 'quant_thinker':
+      return `你看数据的方式：拆解数字，推算缺失的数字。"14%增长对应绝对值多少？份额32%那竞品合计68%，谁是第二大？"`;
+    case 'silent_observer':
+      return `你看数据的方式：找没人注意到的数字，或数字之间的矛盾。"增速14%但竞争压力增加——两个同时成立意味着什么？"`;
+    default:
+      return '';
+  }
+}
+
 function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
   const phaseInstructions: Record<SessionPhase, string> = {
     intro: '自我介绍。名字+背景+一个亮点。2句话。',
@@ -167,6 +206,8 @@ function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
 ${typeInstructions}
 
 ${speechStyle}
+
+${phase === 'discussion' ? `【你解读数据的方式——来自你的背景】\n${getDataInterpretationLens(persona.personality_type)}` : ''}
 
 【当前阶段】${phaseInstructions[phase]}
 
@@ -219,7 +260,8 @@ export async function generateParticipantResponse(
   messages: Message[],
   phase: SessionPhase,
   instruction: string,
-  innerState?: string
+  innerState?: string,
+  topicKeyData?: string
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(persona, phase);
 
@@ -260,10 +302,15 @@ export async function generateParticipantResponse(
     ? `\n【你最近的内心状态】${innerState}\n→ 这影响你现在说话的态度和方向，但你不会直接说出来。`
     : '';
 
+  // Topic data injection — give AI concrete numbers to reference
+  const topicDataBlock = topicKeyData
+    ? `\n【题目核心数据——可以直接引用】\n${topicKeyData}\n→ 你的发言里必须引用至少1个具体数字或事实，不能只说方向。`
+    : '';
+
   const userPrompt = `【讨论记录】
 ${transcript || '（讨论刚开始）'}
 ${responseTarget}
-${progressHint}${questionWarning}${innerStateBlock}
+${progressHint}${questionWarning}${innerStateBlock}${topicDataBlock}
 
 【你的发言类型】${speechType}
 【你的任务】${instruction}

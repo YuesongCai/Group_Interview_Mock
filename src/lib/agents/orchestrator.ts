@@ -83,6 +83,11 @@ export async function getOrchestratorDecision(
   currentPhase: SessionPhase,
   elapsedMinutes: number
 ): Promise<OrchestratorDecision> {
+  // Intro/briefing: no AI cross-responses. Self-intros are handled by startSession flow.
+  if (currentPhase === 'intro' || currentPhase === 'briefing') {
+    return { responders: [] };
+  }
+
   const userPrompt = buildPrompt(messages, participants, topic, config, currentPhase, elapsedMinutes);
 
   const response = await llmComplete(
@@ -135,6 +140,20 @@ export async function getOrchestratorDecision(
         if (target) {
           last.instruction = `追问${target.participant_name}："${target.content.substring(0, 40)}"中的一个具体假设——这个成立吗？用你的背景来反驳或追问。不超过80字/4句。`;
         }
+      }
+    }
+
+    // User echo enforcement: if human's point was ignored, force first responder to address it
+    const lastHumanMsg = [...messages].reverse().find(m => m.participant_type === 'human');
+    if (lastHumanMsg && decision.responders.length > 0) {
+      const humanIdx = messages.indexOf(lastHumanMsg);
+      const msgsSinceHumanSpoke = messages.length - humanIdx - 1;
+      const humanEchoed = messages.slice(humanIdx + 1).some(m =>
+        m.participant_type === 'ai' && m.content.includes(lastHumanMsg.participant_name || '')
+      );
+      if (!humanEchoed && msgsSinceHumanSpoke >= 2 && msgsSinceHumanSpoke <= 6) {
+        const first = decision.responders[0];
+        first.instruction = `优先回应${lastHumanMsg.participant_name}的观点："${lastHumanMsg.content.substring(0, 50)}"——先接住用户的点再展开。` + first.instruction;
       }
     }
 
@@ -499,6 +518,12 @@ function buildPrompt(
   const discussionRound = Math.floor(messages.filter(m => m.phase === 'discussion').length / 3) + 1;
   const progressNote = getProgressNote(discussionRound);
 
+  // Echo over-detection: prevent fixating on one person's viewpoint
+  const echoTracker = buildEchoTracker(messages);
+
+  // User echo priority: ensure human's points get picked up
+  const userEchoHint = buildUserEchoHint(messages);
+
   return `【状态】阶段:${currentPhase} | 已用:${elapsedMinutes.toFixed(0)}分 | 剩:${timeRemaining.toFixed(0)}分 | 第${discussionRound}轮
 
 【参与者】
@@ -506,7 +531,7 @@ ${participantInfo}
 
 【最近对话】
 ${transcript || '（暂无）'}
-${openIssueNote}${echoWarning}${userHookNote}${questionOverload}
+${openIssueNote}${echoWarning}${userHookNote}${questionOverload}${echoTracker}${userEchoHint}
 
 【第${discussionRound}轮应该做什么】${progressNote}
 
@@ -516,7 +541,62 @@ ${openIssueNote}${echoWarning}${userHookNote}${questionOverload}
 3. 指定方式（追问/反驳/量化/整合/纠正）
 4. 包含"不超过80字/4句"
 5. 至少1人要challenge/追问
-6. 大部分用[表达判断]或[反驳追问]，[提问推进]每3-4轮最多1次`;
+6. 大部分用[表达判断]或[反驳追问]，[提问推进]每3-4轮最多1次
+7. instruction必须要求AI引用至少1个具体数字或事实`;
+}
+
+/**
+ * Detect if the same person's views are being over-echoed.
+ */
+function buildEchoTracker(messages: Message[]): string {
+  const recent = messages.slice(-8);
+  if (recent.length < 4) return '';
+
+  // Count how many times each person's name appears in OTHER people's messages
+  const echoCount: Record<string, number> = {};
+  for (const msg of recent) {
+    for (const other of recent) {
+      if (other.participant_name && other.participant_name !== msg.participant_name &&
+          msg.content.includes(other.participant_name)) {
+        echoCount[other.participant_name] = (echoCount[other.participant_name] || 0) + 1;
+      }
+    }
+  }
+
+  const overEchoed = Object.entries(echoCount)
+    .filter(([, count]) => count >= 3)
+    .map(([name]) => name);
+
+  if (overEchoed.length === 0) return '';
+
+  return `\n⚠️ 【Echo过度】${overEchoed.join('、')}的观点已经被反复引用！这一轮：\n→ 禁止再引用这些人的名字\n→ 回应更早之前其他人的观点，或者直接回应题目材料里的数据`;
+}
+
+/**
+ * Detect if the human user's points have been ignored or under-echoed.
+ */
+function buildUserEchoHint(messages: Message[]): string {
+  const lastHumanMsg = [...messages].reverse().find(m => m.participant_type === 'human');
+  if (!lastHumanMsg) return '';
+
+  const humanMsgIndex = messages.indexOf(lastHumanMsg);
+  const msgsSince = messages.length - humanMsgIndex - 1;
+
+  // Check if anyone echoed/responded to the human
+  const aiResponsesAfter = messages.slice(humanMsgIndex + 1).filter(m =>
+    m.participant_type === 'ai' &&
+    m.content.includes(lastHumanMsg.participant_name || '')
+  );
+
+  if (aiResponsesAfter.length === 0 && msgsSince >= 2) {
+    return `\n💬 【用户观点未被回应】${lastHumanMsg.participant_name}说了："${lastHumanMsg.content.substring(0, 60)}"——还没有人回应！这一轮第一个responder必须先回应用户这个点。`;
+  }
+
+  if (aiResponsesAfter.length <= 1 && msgsSince >= 5) {
+    return `\n💬 【增加用户参与感】让某个AI build on用户${lastHumanMsg.participant_name}的观点："${lastHumanMsg.content.substring(0, 50)}"`;
+  }
+
+  return '';
 }
 
 function findOpenIssue(messages: Message[]): string | null {

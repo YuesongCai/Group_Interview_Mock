@@ -12,7 +12,7 @@ import type {
 import { generateTopic } from '@/lib/agents/topic-generator';
 import { generatePersonas } from '@/lib/agents/persona-generator';
 import { getOrchestratorDecision, getOpeningInstructions, checkPhaseTransition } from '@/lib/agents/orchestrator';
-import { generateParticipantResponse, generateInnerMonologue } from '@/lib/agents/participant';
+import { generateParticipantResponse, generateInnerMonologue, extractTopicKeyData } from '@/lib/agents/participant';
 import { generateHostWelcome, generateHostPhaseTransition, generateHostInterjection } from '@/lib/agents/host';
 import { generateEvaluation } from '@/lib/agents/evaluator';
 import { DEFAULT_SESSION_CONFIG, DURATION_PRESETS, AVATAR_COLORS } from './types';
@@ -593,6 +593,11 @@ export async function handleUserMessage(
   const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean; inner_monologue?: string } | null)[] = [];
   if (!state.innerStates) state.innerStates = {};
 
+  // Extract topic data for discussion-phase injection
+  const topicKeyData = (effectivePhase === 'discussion' || effectivePhase === 'summary')
+    ? extractTopicKeyData(state.topic)
+    : undefined;
+
   for (const r of decision.responders) {
     const participant = state.participants.find(p => p.id === r.participant_id);
     if (!participant?.persona_card) {
@@ -608,7 +613,8 @@ export async function handleUserMessage(
       state.messages,
       effectivePhase,
       r.instruction,
-      innerState
+      innerState,
+      topicKeyData
     );
 
     const message: Message = {
@@ -703,13 +709,17 @@ export async function generateProactiveMessages(
 
     const instruction = buildProactiveInstruction(speaker, state.messages, currentPhase);
     const innerState = state.innerStates[speaker.id];
+    const proactiveTopicData = (currentPhase === 'discussion' || currentPhase === 'summary')
+      ? extractTopicKeyData(state.topic!)
+      : undefined;
 
     const content = await generateParticipantResponse(
       speaker.persona_card,
       state.messages,
       currentPhase,
       instruction,
-      innerState
+      innerState,
+      proactiveTopicData
     );
 
     const message: Message = {
