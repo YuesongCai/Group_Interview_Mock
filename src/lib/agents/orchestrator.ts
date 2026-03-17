@@ -88,6 +88,32 @@ export async function getOrchestratorDecision(
     return { responders: [] };
   }
 
+  // === @MENTION HANDLING — user explicitly cues a specific AI ===
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg?.participant_type === 'human') {
+    const mention = parseMention(lastMsg.content, participants);
+    if (mention.hasMention && mention.mentionedParticipantId) {
+      const mentionedParticipant = participants.find(p => p.id === mention.mentionedParticipantId);
+      if (mentionedParticipant && mentionedParticipant.type === 'ai') {
+        const willRespond = shouldRespondToMention(mentionedParticipant, lastMsg);
+        if (willRespond) {
+          return {
+            responders: [{
+              participant_id: mention.mentionedParticipantId,
+              instruction: buildMentionResponseInstruction(
+                mentionedParticipant, lastMsg, mention.contentAfterMention, topic
+              ),
+              delay_ms: 800 + Math.random() * 1200,
+              is_interrupt: false,
+            }],
+          };
+        } else {
+          return handleMentionSilence(mentionedParticipant, lastMsg, participants, messages);
+        }
+      }
+    }
+  }
+
   // === FORCED USER ECHO — architectural-level enforcement ===
   // If the human spoke recently and no AI has responded to them, short-circuit normal flow.
   const forcedEcho = shouldForceUserEcho(messages, participants);
@@ -381,22 +407,135 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
 }
 
 /**
+ * Dynamically parse topic type for topic-agnostic instructions.
+ */
+function parseTopicChallenge(topic: Topic): {
+  coreQuestion: string;
+  decisionType: string;
+  keyTension: string;
+} {
+  const bg = topic.background_material || '';
+  const questions = topic.key_questions || [];
+  const allText = [bg, ...questions].join('\n');
+
+  let decisionType = '开放讨论';
+  if (/选择|优先|哪个|哪种|应该选/.test(allText)) {
+    decisionType = '多选一';
+  } else if (/挑战|困境|问题|瓶颈/.test(allText)) {
+    decisionType = '问题诊断';
+  } else if (/计划|方案|如何|怎么/.test(allText)) {
+    decisionType = '方案设计';
+  } else if (/排序|优先级|先后/.test(allText)) {
+    decisionType = '优先级排序';
+  }
+
+  const coreQuestion = questions[0] || topic.description || '如何解决当前的核心挑战';
+
+  return { coreQuestion, decisionType, keyTension: '' };
+}
+
+function buildWave1Instruction(
+  archetype: string,
+  coreQuestion: string,
+  decisionType: string,
+  topicNumbers: string
+): string {
+  const entryAngle: Record<string, string> = {
+    '多选一': '你的切入角度：先说你认为这道题真正的判断标准是什么，然后给出你的倾向',
+    '问题诊断': '你的切入角度：先定义问题的根本原因是什么，再说优先解决哪个',
+    '方案设计': '你的切入角度：先说你认为核心约束条件是什么，再给出方向判断',
+    '优先级排序': '你的切入角度：先说你用什么标准排序，再给出你的排法',
+    '开放讨论': '你的切入角度：先说你认为这道题最关键的一个决策点是什么',
+  };
+  const angle = entryAngle[decisionType] || entryAngle['开放讨论'];
+
+  if (archetype === 'dominant_leader') {
+    return `[表达判断] 你是第一个开口的，要抢到框架定义权。
+
+题目核心问题：${coreQuestion}
+
+${angle}
+
+要求：
+- 4-5句话，120-140字
+- 有明确立场，不能"各有道理"
+- 提出你认为讨论应该按什么顺序推进
+${topicNumbers ? `\n可用数据：${topicNumbers}` : ''}`;
+  }
+
+  // industry_insider
+  return `[表达判断] 前面有人提了框架，你用你的实战经验补充一个其他人不知道的点。
+
+题目核心问题：${coreQuestion}
+
+你的任务：
+- 用"做过类似项目"的视角，指出前面判断的一个盲区或坑
+- 说明你对题目的倾向，理由要具体
+- 不要重复前面说的，要添加增量信息
+
+4-5句，100-120字。
+${topicNumbers ? `可用数据：${topicNumbers}` : ''}`;
+}
+
+function buildWave2Instruction(
+  archetype: string,
+  coreQuestion: string,
+  topicNumbers: string
+): string {
+  if (archetype === 'quant_thinker') {
+    return `[反驳追问] 前面有人提了方向和框架。你从数字角度质疑。
+
+题目核心问题：${coreQuestion}
+
+你的任务：
+- 找出前面判断里没有数据支撑的那个最关键的假设
+- 用题目里的数字（或者推算出来的数字）来质疑它
+- 给出你自己的量化判断：如果X成立，结论应该是Y
+
+4-5句，100-120字。
+${topicNumbers ? `题目数据：${topicNumbers}` : ''}`;
+  }
+
+  // analytical_challenger
+  return `[反驳追问] 前面有人提了框架和方向，你来质疑前提。
+
+题目核心问题：${coreQuestion}
+
+你的任务：
+- 指出前面某个具体判断的前提假设——说清楚"这个判断成立的条件是什么"
+- 说明这个条件在题目场景里是否真的成立
+- 给出你自己的修正判断（必须有，不能只质疑不给答案）
+
+4-5句，100-120字。必须直接点名回应前面某人的某句话。`;
+}
+
+function buildWave3Instruction(coreQuestion: string): string {
+  return `[整合收尾] 前两波已经有了框架和质疑，你来做有价值的补充。
+
+题目核心问题：${coreQuestion}
+
+你的任务：
+- 整合目前共识是什么（一句话）
+- 补充一个大家都没提到但很重要的角度（不是重复，是盲点）
+- 说明你倾向的方向
+
+3-4句，80-100字。`;
+}
+
+/**
  * Opening phase instructions — THREE-WAVE framework design.
- * Wave 1 (dominant_leader, industry_insider): Propose framework, set direction
- * Wave 2 (analytical_challenger, quant_thinker): Challenge framework, add conditions
- * Wave 3 (strategic_integrator, silent_observer): Integrate, fill blind spots
+ * Topic-agnostic: entry angle adapts to decision type.
  */
 export function getOpeningInstructions(
   participants: Participant[],
   topic: Topic
 ): OrchestratorDecision {
   const aiParticipants = participants.filter(p => p.type === 'ai');
+  const topicNumbers = extractQuickNumbers(topic);
+  const { coreQuestion, decisionType } = parseTopicChallenge(topic);
 
   const wave1Types = ['dominant_leader', 'industry_insider'];
   const wave2Types = ['analytical_challenger', 'quant_thinker'];
-
-  // Extract topic numbers for opening references
-  const topicNumbers = extractQuickNumbers(topic);
 
   return {
     responders: aiParticipants.map((p) => {
@@ -406,55 +545,18 @@ export function getOpeningInstructions(
       let instruction: string;
 
       if (isWave1) {
-        if (archetype === 'dominant_leader') {
-          instruction = `[表达判断] 你是第一个开口的。
-任务：
-1. 用自己的话重新定义这道题的核心问题（不是复述题目，是你的解读）
-2. 说明你认为优先考虑哪个方向，给1个最重要的理由
-3. 提出讨论框架——"我建议我们先看X再看Y"
-
-发言4-5句，120-140字。要有明确立场，不能模棱两可。
-${topicNumbers ? `【题目数据可用】${topicNumbers}` : ''}`;
-        } else {
-          // industry_insider
-          instruction = `[表达判断] 你是第二个开口，前面dominant_leader提了框架。
-任务：
-1. 用你的行业直觉对刚才那个框架补充一个其他人不知道的坑或insight
-2. 说明你支持或反对哪个方向，理由要有具体依据
-3. 不要重复前面说的，要添加新信息
-
-发言4-5句，100-120字。
-${topicNumbers ? `【题目数据可用】${topicNumbers}` : ''}`;
-        }
+        instruction = buildWave1Instruction(archetype, coreQuestion, decisionType, topicNumbers);
       } else if (isWave2) {
-        instruction = `[反驳追问] 前面已经有人提了框架和方向，你来质疑。
-任务：
-1. 指出前面某个具体判断的前提有问题——"等等，这个成立的条件是什么？"
-2. 提出一个被忽略的关键因素
-3. 给出你自己修正后的判断（不只是质疑，要有自己的答案）
-
-发言4-5句，100-120字。必须直接点名回应前面某人说的某句话。
-${topicNumbers ? `【可以用数字质疑】${topicNumbers}` : ''}`;
+        instruction = buildWave2Instruction(archetype, coreQuestion, topicNumbers);
       } else {
-        // Wave 3: strategic_integrator, silent_observer
-        instruction = `[整合收尾] 前面已经有争论了，你来做一个有价值的补充。
-任务：
-1. 整合一下目前的共识是什么（一句话）
-2. 补充一个大家都没提到但很重要的角度
-3. 说明你倾向哪个方向，为什么
-
-发言3-4句，80-100字。不要重复前面的观点，要有增量。`;
+        instruction = buildWave3Instruction(coreQuestion);
       }
 
-      // Three-wave delay: wave 1 fastest, wave 2 medium, wave 3 slowest
-      // Random offset within each wave to feel natural
       const waveDelay = isWave1 ? 0 : isWave2 ? 5000 : 10000;
-      const randomOffset = Math.random() * 2000;
-
       return {
         participant_id: p.id,
         instruction,
-        delay_ms: waveDelay + randomOffset + 1000,
+        delay_ms: waveDelay + Math.random() * 2000 + 1000,
         is_interrupt: archetype === 'dominant_leader',
       };
     }),
@@ -552,9 +654,10 @@ function buildPrompt(
     ? `\n🔴 【提问过多】最近${recentQuestionCount}条消息以问句结尾！所有instruction必须用[表达判断]或[反驳追问]，禁止[提问推进]！`
     : '';
 
-  // Discussion progress tracking
+  // Task-aware discussion progress tracking
   const discussionRound = Math.floor(messages.filter(m => m.phase === 'discussion').length / 3) + 1;
-  const progressNote = getProgressNote(discussionRound);
+  const taskProgress = detectTaskProgress(messages, topic);
+  const progressNote = buildProgressNote(taskProgress, topic);
 
   // Echo over-detection: prevent fixating on one person's viewpoint
   const echoTracker = buildEchoTracker(messages);
@@ -580,7 +683,7 @@ ${openIssueNote}${echoWarning}${userHookNote}${questionOverload}${echoTracker}${
 4. 包含"4-5句，120-150字"
 5. 至少1人要challenge/追问
 6. 大部分用[表达判断]或[反驳追问]，[提问推进]每3-4轮最多1次
-7. instruction必须要求AI引用至少1个具体数字或事实`;
+7. instruction必须要求AI有论据——数据、逻辑推导、行业类比、条件假设均可，但不能只有结论没有论据`;
 }
 
 /**
@@ -661,12 +764,81 @@ function findOpenIssue(messages: Message[]): string | null {
   return null;
 }
 
-function getProgressNote(round: number): string {
-  if (round <= 1) return '框架建立期。有人已提了方向——需要有人质疑或补充框架，不要直接跳到行动计划。在框架上加条件、加数据、加质疑。';
-  if (round <= 2) return '深化分歧。框架基本确定，现在深入具体判断。正面回应分歧，给出有数据/逻辑支撑的判断。';
-  if (round <= 3) return '解决分歧。用数据/案例/逻辑来解决具体分歧点。不能还在"两边都有道理"的状态。';
-  if (round <= 4) return '收拢方向。综合前面的讨论做整合，给出有倾向性的结论。';
-  return '收尾。必须有人做最终整合，不能还在发散。';
+/**
+ * Task-aware progress tracking — detects which task the discussion is on
+ * and whether it's time to advance, instead of blindly counting rounds.
+ */
+function detectTaskProgress(messages: Message[], topic: Topic): {
+  currentTask: number;
+  taskStatus: string;
+  shouldAdvance: boolean;
+} {
+  const discussionMsgs = messages.filter(m => m.phase === 'discussion');
+  const allContent = discussionMsgs.map(m => m.content).join('\n');
+  const tasks = topic.key_questions || [];
+
+  // Task 1 done: someone gave a directional conclusion AND enough discussion happened
+  const task1Signals = ['优先', '应该选', '我认为选', '首选', '选择方向', '我倾向', '方向应该是', '核心问题是'];
+  const task1Done = task1Signals.some(k => allContent.includes(k)) && discussionMsgs.length >= 6;
+
+  // Task 2 started: someone mentioned action/plan
+  const task2Signals = ['行动计划', '具体措施', '第一步', '里程碑', '推广策略', '怎么做', '执行', '落地', '时间表'];
+  const task2Started = task2Signals.some(k => allContent.includes(k));
+
+  // Task 3 started: risk/contingency
+  const task3Signals = ['风险', '替代方案', '如果失败', '应对', '最坏情况', '万一', '备选'];
+  const task3Started = task3Signals.some(k => allContent.includes(k));
+
+  if (!task1Done) {
+    return {
+      currentTask: 1,
+      taskStatus: `任务1还没有明确结论。`,
+      shouldAdvance: false,
+    };
+  }
+
+  if (task1Done && !task2Started && tasks.length >= 2) {
+    return {
+      currentTask: 2,
+      taskStatus: `任务1已有倾向性结论。需要推进到任务2。`,
+      shouldAdvance: true,
+    };
+  }
+
+  if (task2Started && !task3Started && tasks.length >= 3) {
+    return {
+      currentTask: 3,
+      taskStatus: `任务2进行中。适时引入任务3。`,
+      shouldAdvance: false,
+    };
+  }
+
+  return {
+    currentTask: task3Started ? 3 : 2,
+    taskStatus: `讨论进入收尾阶段。`,
+    shouldAdvance: false,
+  };
+}
+
+function buildProgressNote(
+  progress: ReturnType<typeof detectTaskProgress>,
+  topic: Topic
+): string {
+  const tasks = topic.key_questions || [];
+
+  if (progress.shouldAdvance && tasks.length >= 2) {
+    return `
+⚠️ 【任务推进】${progress.taskStatus}
+→ 这一轮必须有人主动推进到下一个任务
+→ 下一个任务：${tasks[progress.currentTask - 1] || '制定具体行动计划'}
+→ instruction里必须包含推进到新任务的要求`;
+  }
+
+  return `
+【当前任务】第${progress.currentTask}个任务
+状态：${progress.taskStatus}
+${tasks.length > 0 ? `任务列表：\n${tasks.map((t, i) => `  任务${i + 1}: ${t}`).join('\n')}` : ''}
+→ 这一轮instruction要推进当前任务，不要原地兜圈`;
 }
 
 // ============================================================
@@ -688,10 +860,12 @@ function buildInstructionWithMaterial(
 
   const parts: string[] = [baseInstruction];
 
-  // 1. Topic data — concrete numbers to reference
+  // 1. Topic data if available; otherwise give a logic toolkit
   const topicData = getRelevantTopicData(topic, baseInstruction);
   if (topicData) {
-    parts.push(`【数据弹药】${topicData}——发言里引用这个数字让观点有根据。`);
+    parts.push(`【数据弹药】${topicData}——可以引用这个数字支撑观点。`);
+  } else {
+    parts.push(getLogicToolkit(persona.personality_type));
   }
 
   // 2. User insight — only if user spoke recently (within last 4 messages)
@@ -704,6 +878,28 @@ function buildInstructionWithMaterial(
   }
 
   return parts.join('\n');
+}
+
+/**
+ * Per-type logic toolkit — how each personality argues when no hard data is available.
+ */
+function getLogicToolkit(type: string): string {
+  switch (type) {
+    case 'dominant_leader':
+      return `【论证方式】用优先级逻辑："X比Y更重要，因为X解决根本问题，Y只是表面"，或用排除法："不选A因为...，不选B因为...，所以C"`;
+    case 'analytical_challenger':
+      return `【论证方式】质疑前提："这个结论成立的条件是X，但X本身需要验证"，或用反例："如果判断对，应该看到Y，但实际上..."`;
+    case 'industry_insider':
+      return `【论证方式】用行业常识或类比："这个行业里通常X，所以..."，类比要具体，不要说"我的经验告诉我"`;
+    case 'strategic_integrator':
+      return `【论证方式】用逻辑整合："A说的X和B说的Y放在一起说明了Z"，或条件推导："如果目标是M，关键路径一定经过N"`;
+    case 'quant_thinker':
+      return `【论证方式】推算缺失的数字："题目说X，假设Y，那Z大概是..."，或指出："要判断这个需要知道X，现在只能假设..."`;
+    case 'silent_observer':
+      return `【论证方式】指出逻辑矛盾："大家都在说X，但题目有个细节被忽略了"，或前提错误："讨论前提是A，但A值得质疑"`;
+    default:
+      return `【论证方式】用逻辑推导而不是经验堆砌。"因为X所以Y"比"我的经验告诉我"更有说服力。`;
+  }
 }
 
 function getHumanMsgAge(messages: Message[]): number {
@@ -863,6 +1059,115 @@ function selectBestUserEchoResponder(
 
   scored.sort((a, b) => b.score - a.score);
   return scored[0]?.participant || pool[0];
+}
+
+// ============================================================
+// === @MENTION SYSTEM ===
+// ============================================================
+
+interface MentionResult {
+  hasMention: boolean;
+  mentionedParticipantId: string | null;
+  mentionedName: string | null;
+  contentAfterMention: string;
+}
+
+function parseMention(userMessage: string, participants: Participant[]): MentionResult {
+  const mentionPattern = /@([\u4e00-\u9fffA-Za-z]+)/;
+  const match = userMessage.match(mentionPattern);
+
+  if (!match) {
+    return { hasMention: false, mentionedParticipantId: null, mentionedName: null, contentAfterMention: userMessage };
+  }
+
+  const mentionedName = match[1];
+  const mentionedParticipant = participants.find(p =>
+    p.display_name === mentionedName ||
+    p.display_name.includes(mentionedName) ||
+    p.persona_card?.name === mentionedName
+  );
+
+  return {
+    hasMention: true,
+    mentionedParticipantId: mentionedParticipant?.id || null,
+    mentionedName,
+    contentAfterMention: userMessage.replace(mentionPattern, '').trim(),
+  };
+}
+
+function shouldRespondToMention(participant: Participant, humanMsg: Message): boolean {
+  const persona = participant.persona_card;
+  if (!persona) return true;
+
+  // silent_observer has 30% chance of staying silent
+  if (persona.personality_type === 'silent_observer' && Math.random() < 0.3) {
+    return false;
+  }
+
+  // Very short message: analytical_challenger may not bother
+  const msgLength = humanMsg.content.replace(/@\S+/, '').trim().length;
+  if (msgLength < 5 && persona.personality_type === 'analytical_challenger' && Math.random() < 0.4) {
+    return false;
+  }
+
+  return true;
+}
+
+function handleMentionSilence(
+  silentParticipant: Participant,
+  humanMsg: Message,
+  participants: Participant[],
+  messages: Message[]
+): OrchestratorDecision {
+  // 50% chance another AI picks up the question
+  const otherAI = participants.find(p =>
+    p.type === 'ai' &&
+    p.id !== silentParticipant.id &&
+    !messages.slice(-2).some(m => m.participant_id === p.id)
+  );
+
+  if (otherAI && Math.random() > 0.5) {
+    const questionContent = humanMsg.content.replace(/@\S+/, '').trim();
+    return {
+      responders: [{
+        participant_id: otherAI.id,
+        instruction: `[表达判断] ${humanMsg.participant_name}@了${silentParticipant.persona_card?.name}，但没有回应。你接过这个问题，给出你自己的观点。问题是："${questionContent}" 4-5句，120-150字，以判断结尾。`,
+        delay_ms: 2000 + Math.random() * 1500,
+        is_interrupt: false,
+      }],
+    };
+  }
+
+  // Pure silence
+  return { responders: [] };
+}
+
+function buildMentionResponseInstruction(
+  responder: Participant,
+  humanMsg: Message,
+  questionContent: string,
+  topic: Topic
+): string {
+  const archetype = responder.persona_card?.personality_type || '';
+  const speechType = getSpeechTypeForArchetype(archetype);
+  const userName = humanMsg.participant_name || '用户';
+  const hasQuestion = questionContent.length > 3;
+
+  const topicData = getRelevantTopicData(topic, questionContent || humanMsg.content);
+  const dataBlock = topicData
+    ? `\n【可用数据】${topicData}`
+    : `\n${getLogicToolkit(archetype)}`;
+
+  if (hasQuestion) {
+    return `${speechType} ${userName}专门@你，问了："${questionContent}"
+直接回应这个问题，给出你的判断。
+不要说"谢谢你问我"，直接说你的观点。
+4-5句，120-150字，以判断结尾。${dataBlock}`;
+  } else {
+    return `${speechType} ${userName}@了你，想听你的看法。
+根据目前的讨论，说出你现在最想说的一个观点。
+4-5句，120-150字，以判断结尾。${dataBlock}`;
+  }
 }
 
 /**

@@ -508,6 +508,9 @@ export default function ChatRoom({
             interimTranscript={voice.interimTranscript}
             onStartListening={voice.startListening}
             onStopListening={voice.stopListening}
+            mentionCandidates={participants
+              .filter(p => p.type === 'ai')
+              .map(p => ({ id: p.id, display_name: p.display_name, avatar_color: p.avatar_color }))}
           />
         </div>
 

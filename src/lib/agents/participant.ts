@@ -323,10 +323,10 @@ export async function generateParticipantResponse(
     ? `\n【你最近的内心状态】${innerState}\n→ 这影响你现在说话的态度和方向，但你不会直接说出来。`
     : '';
 
-  // Topic data injection — give AI concrete numbers to reference
+  // Topic data injection — available for reference, not mandatory
   const topicDataBlock = topicKeyData
-    ? `\n【题目核心数据——可以直接引用】\n${topicKeyData}\n→ 你的发言里必须引用至少1个具体数字或事实，不能只说方向。`
-    : '';
+    ? `\n【题目核心数据——可以引用】\n${topicKeyData}\n→ 你的发言必须有论据——可以是数据、逻辑推导、行业类比、或条件假设。没有论据只有结论的发言没有价值。`
+    : '\n→ 你的发言必须有论据——可以是数据、逻辑推导、行业类比、或条件假设。没有论据只有结论的发言没有价值。';
 
   const userPrompt = `【讨论记录】
 ${transcript || '（讨论刚开始）'}

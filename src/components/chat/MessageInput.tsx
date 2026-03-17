@@ -1,7 +1,13 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import styles from './MessageInput.module.css';
+
+interface MentionCandidate {
+  id: string;
+  display_name: string;
+  avatar_color: string;
+}
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -14,6 +20,8 @@ interface MessageInputProps {
   interimTranscript?: string;
   onStartListening?: () => void;
   onStopListening?: () => void;
+  // @mention support
+  mentionCandidates?: MentionCandidate[];
 }
 
 export default function MessageInput({
@@ -26,8 +34,12 @@ export default function MessageInput({
   interimTranscript,
   onStartListening,
   onStopListening,
+  mentionCandidates = [],
 }: MessageInputProps) {
   const [text, setText] = useState('');
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [selectedMentionIdx, setSelectedMentionIdx] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // When voice transcript updates, append to text
@@ -37,24 +49,65 @@ export default function MessageInput({
     }
   }, [voiceTranscript]);
 
+  const filteredCandidates = useMemo(() => {
+    if (!mentionFilter) return mentionCandidates;
+    return mentionCandidates.filter(c =>
+      c.display_name.includes(mentionFilter)
+    );
+  }, [mentionCandidates, mentionFilter]);
+
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
 
-    // Stop listening when sending
     if (isListening && onStopListening) {
       onStopListening();
     }
 
     onSend(trimmed);
     setText('');
+    setShowMentionMenu(false);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
   }, [text, disabled, onSend, isListening, onStopListening]);
 
+  const insertMention = useCallback((candidate: MentionCandidate) => {
+    // Replace the @partial with @fullname
+    const lastAtIdx = text.lastIndexOf('@');
+    const before = lastAtIdx >= 0 ? text.substring(0, lastAtIdx) : text;
+    setText(`${before}@${candidate.display_name} `);
+    setShowMentionMenu(false);
+    setMentionFilter('');
+    setSelectedMentionIdx(0);
+    textareaRef.current?.focus();
+  }, [text]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showMentionMenu && filteredCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev + 1) % filteredCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev - 1 + filteredCandidates.length) % filteredCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertMention(filteredCandidates[selectedMentionIdx]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentionMenu(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -62,7 +115,25 @@ export default function MessageInput({
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
+    const value = e.target.value;
+    setText(value);
+
+    // Check for @mention trigger
+    const lastAtIdx = value.lastIndexOf('@');
+    if (lastAtIdx >= 0 && mentionCandidates.length > 0) {
+      const afterAt = value.substring(lastAtIdx + 1);
+      // Only show menu if @ is at the end or followed by partial name (no space after name yet)
+      if (!afterAt.includes(' ') && !afterAt.includes('\n')) {
+        setShowMentionMenu(true);
+        setMentionFilter(afterAt);
+        setSelectedMentionIdx(0);
+      } else {
+        setShowMentionMenu(false);
+      }
+    } else {
+      setShowMentionMenu(false);
+    }
+
     const ta = e.target;
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
@@ -107,12 +178,32 @@ export default function MessageInput({
           value={text}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || '输入你的观点... (Enter发送, Shift+Enter换行)'}
+          placeholder={placeholder || '输入你的观点... (Enter发送, Shift+Enter换行, @点名)'}
           disabled={disabled}
           rows={1}
         />
         {isListening && interimTranscript && (
           <div className={styles.interimText}>{interimTranscript}</div>
+        )}
+
+        {/* @mention dropdown */}
+        {showMentionMenu && filteredCandidates.length > 0 && (
+          <div className={styles.mentionMenu}>
+            {filteredCandidates.map((c, i) => (
+              <button
+                key={c.id}
+                className={`${styles.mentionItem} ${i === selectedMentionIdx ? styles.mentionItemActive : ''}`}
+                onClick={() => insertMention(c)}
+                onMouseEnter={() => setSelectedMentionIdx(i)}
+              >
+                <span
+                  className={styles.mentionAvatar}
+                  style={{ background: c.avatar_color }}
+                />
+                <span className={styles.mentionName}>{c.display_name}</span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
