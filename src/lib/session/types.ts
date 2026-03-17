@@ -8,6 +8,7 @@ export interface SessionState {
   startedAt: number | null; // timestamp ms
   phaseStartedAt: number | null;
   surpriseDelivered?: boolean; // Whether mid-discussion surprise info has been delivered
+  innerStates?: Record<string, string>; // participant_id → latest inner monologue
 }
 
 // Duration presets with phase breakdowns

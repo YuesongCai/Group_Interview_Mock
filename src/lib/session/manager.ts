@@ -12,7 +12,7 @@ import type {
 import { generateTopic } from '@/lib/agents/topic-generator';
 import { generatePersonas } from '@/lib/agents/persona-generator';
 import { getOrchestratorDecision, getOpeningInstructions, checkPhaseTransition } from '@/lib/agents/orchestrator';
-import { generateParticipantResponse } from '@/lib/agents/participant';
+import { generateParticipantResponse, generateInnerMonologue } from '@/lib/agents/participant';
 import { generateHostWelcome, generateHostPhaseTransition, generateHostInterjection } from '@/lib/agents/host';
 import { generateEvaluation } from '@/lib/agents/evaluator';
 import { DEFAULT_SESSION_CONFIG, DURATION_PRESETS, AVATAR_COLORS } from './types';
@@ -589,7 +589,10 @@ export async function handleUserMessage(
   }
 
   // Generate AI responses sequentially (QPS limit)
+  // Each response sees previous responder's message (already pushed to state.messages)
   const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
+  if (!state.innerStates) state.innerStates = {};
+
   for (const r of decision.responders) {
     const participant = state.participants.find(p => p.id === r.participant_id);
     if (!participant?.persona_card) {
@@ -597,11 +600,15 @@ export async function handleUserMessage(
       continue;
     }
 
+    // Pass inner state from previous turn (if available)
+    const innerState = state.innerStates[participant.id];
+
     const aiContent = await generateParticipantResponse(
       participant.persona_card,
       state.messages,
       effectivePhase,
-      r.instruction
+      r.instruction,
+      innerState
     );
 
     const message: Message = {
@@ -616,6 +623,15 @@ export async function handleUserMessage(
       timestamp: new Date().toISOString(),
     };
     state.messages.push(message);
+
+    // Generate inner monologue async (fire-and-forget, non-blocking)
+    generateInnerMonologue(participant.persona_card, state.messages, aiContent)
+      .then(monologue => {
+        if (monologue) {
+          state.innerStates![participant.id] = monologue;
+        }
+      })
+      .catch(() => { /* non-critical */ });
 
     aiResponses.push({
       participant,
@@ -676,17 +692,21 @@ export async function generateProactiveMessages(
 
   const aiResponses: ({ participant: Participant; content: string; delay_ms: number; is_interrupt: boolean } | null)[] = [];
 
+  if (!state.innerStates) state.innerStates = {};
+
   for (const speaker of speakers) {
     if (!speaker.persona_card) continue;
     if (lastSpeakers.has(speaker.id) && lastMessages.length > 2) continue;
 
     const instruction = buildProactiveInstruction(speaker, state.messages, currentPhase);
+    const innerState = state.innerStates[speaker.id];
 
     const content = await generateParticipantResponse(
       speaker.persona_card,
       state.messages,
       currentPhase,
-      instruction
+      instruction,
+      innerState
     );
 
     const message: Message = {
@@ -701,6 +721,13 @@ export async function generateProactiveMessages(
       timestamp: new Date().toISOString(),
     };
     state.messages.push(message);
+
+    // Generate inner monologue async
+    generateInnerMonologue(speaker.persona_card, state.messages, content)
+      .then(monologue => {
+        if (monologue) state.innerStates![speaker.id] = monologue;
+      })
+      .catch(() => {});
 
     aiResponses.push({
       participant: speaker,

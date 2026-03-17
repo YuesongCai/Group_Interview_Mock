@@ -82,6 +82,61 @@ function getDefaultSpeechType(type: string): string {
   }
 }
 
+/**
+ * Concrete speech style constraints per personality type.
+ * Controls HOW they talk (sentence patterns, punctuation, habits), not WHAT they say.
+ */
+function getSpeechStyleConstraints(type: string): string {
+  switch (type) {
+    case 'dominant_leader':
+      return `【你的说话方式】
+- 句子短，不超过15字一句
+- 喜欢用"所以"、"那就"、"这样"开头
+- 不说"我觉得"，直接说结论
+- 偶尔用破折号强调——就这样
+- 不问问题，陈述判断`;
+
+    case 'analytical_challenger':
+      return `【你的说话方式】
+- 第一句经常以"等等"或"但是"开头
+- 喜欢用括号补充（比如这种）
+- 句子完整，有逻辑连接词（因为/所以/如果/那么）
+- 不省略主语
+- 说话比较冷，不加"哈哈"或感叹号`;
+
+    case 'industry_insider':
+      return `【你的说话方式】
+- 喜欢说"我做过这个"、"当时我们"
+- 用行业词汇但不解释（默认对方懂）
+- 偶尔说一半停下来"——对，就是这个问题"
+- 语气偏肯定，不太用"可能"`;
+
+    case 'strategic_integrator':
+      return `【你的说话方式】
+- 喜欢先复述再延伸："你说的X，加上Y的话——"
+- 句子稍长，有过渡词
+- 会用"也就是说"做总结
+- 偶尔停顿用省略号表示在思考`;
+
+    case 'quant_thinker':
+      return `【你的说话方式】
+- 喜欢说数字，哪怕是估算："大概30%"、"至少2倍"
+- 句子结构是"前提→推论"
+- 不说"感觉"，说"数据显示"或"逻辑上"
+- 会用"拆一下"、"算一下"`;
+
+    case 'silent_observer':
+      return `【你的说话方式】
+- 开口第一句经常是"其实"或"我注意到"
+- 说完就停，不延伸
+- 不问问题，说观察
+- 语气平，不强调`;
+
+    default:
+      return '';
+  }
+}
+
 function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
   const phaseInstructions: Record<SessionPhase, string> = {
     intro: '自我介绍。名字+背景+一个亮点。2句话。',
@@ -97,6 +152,7 @@ function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
     : '"我觉得..."';
 
   const typeInstructions = getTypeInstructions(persona);
+  const speechStyle = getSpeechStyleConstraints(persona.personality_type);
 
   return `你是${persona.name}，正在参加群面。
 
@@ -109,6 +165,8 @@ function buildSystemPrompt(persona: PersonaCard, phase: SessionPhase): string {
 【失控表现】${persona.panic_behavior || '重复自己的观点'}
 
 ${typeInstructions}
+
+${speechStyle}
 
 【当前阶段】${phaseInstructions[phase]}
 
@@ -160,7 +218,8 @@ export async function generateParticipantResponse(
   persona: PersonaCard,
   messages: Message[],
   phase: SessionPhase,
-  instruction: string
+  instruction: string,
+  innerState?: string
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(persona, phase);
 
@@ -196,10 +255,15 @@ export async function generateParticipantResponse(
   // Determine speech type from instruction or default
   const speechType = extractSpeechType(instruction) || getDefaultSpeechType(persona.personality_type);
 
+  // Inner monologue context — influences tone and direction without being spoken
+  const innerStateBlock = innerState
+    ? `\n【你最近的内心状态】${innerState}\n→ 这影响你现在说话的态度和方向，但你不会直接说出来。`
+    : '';
+
   const userPrompt = `【讨论记录】
 ${transcript || '（讨论刚开始）'}
 ${responseTarget}
-${progressHint}${questionWarning}
+${progressHint}${questionWarning}${innerStateBlock}
 
 【你的发言类型】${speechType}
 【你的任务】${instruction}
@@ -286,6 +350,46 @@ function findOpenQuestion(messages: Message[]): string | null {
   }
 
   return null;
+}
+
+/**
+ * Generate a short inner monologue — what the persona is thinking but not saying.
+ * Runs async, non-blocking. Used to influence next turn's tone/direction.
+ * Uses a single LLM call with very low max_tokens to minimize QPS impact.
+ */
+export async function generateInnerMonologue(
+  persona: PersonaCard,
+  messages: Message[],
+  justSaid: string
+): Promise<string> {
+  const recentContext = messages.slice(-5).map(m =>
+    `${m.participant_name}: ${m.content}`
+  ).join('\n');
+
+  const prompt = `你是${persona.name}（${persona.personality_type}），刚刚在群面里说了："${justSaid.substring(0, 80)}"
+
+最近对话：
+${recentContext}
+
+用第一人称写2句你没说出口的真实想法（不超过40字）。可以是：
+- 对刚才那个人的真实评价（"他说的有道理但结论太草率"）
+- 你的竞争焦虑（"他比我说得好"/"我被抢话了"）
+- 你没说出来的判断（"其实数据不支持他的结论"）
+- 你在盘算下一步（"下次我要把这个点展开"）
+
+必须是内心活动，不是分析。`;
+
+  try {
+    const result = await llmComplete(
+      [{ role: 'user', content: prompt }],
+      'participant',
+      { max_tokens: 80, temperature: 0.9 }
+    );
+    return result.content.trim().substring(0, 60);
+  } catch {
+    // Non-critical — return empty on failure
+    return '';
+  }
 }
 
 function getTemperature(persona: PersonaCard): number {

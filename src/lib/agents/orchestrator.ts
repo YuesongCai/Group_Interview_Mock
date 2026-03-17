@@ -183,6 +183,116 @@ function getSpeechTypeForArchetype(archetype: string): string {
   }
 }
 
+/**
+ * Tension pairs — which personality types create the most productive conflict.
+ * Used to ensure diverse, high-contrast responder selection.
+ */
+const TENSION_PAIRS: Record<string, string[]> = {
+  'dominant_leader': ['analytical_challenger', 'silent_observer'],
+  'analytical_challenger': ['dominant_leader', 'industry_insider'],
+  'industry_insider': ['quant_thinker', 'analytical_challenger'],
+  'strategic_integrator': ['dominant_leader', 'industry_insider'],
+  'quant_thinker': ['industry_insider', 'dominant_leader'],
+  'silent_observer': ['dominant_leader', 'strategic_integrator'],
+};
+
+/**
+ * Select responders that maximize dialogue tension (Insight 4).
+ * First pick: highest willingness. Second pick: highest tension with first.
+ */
+function selectDiverseResponders(
+  candidates: Participant[],
+  count: number,
+  messages: Message[]
+): Participant[] {
+  if (candidates.length <= count) return candidates;
+
+  // Sort by willingness to speak (heuristic gate)
+  const scored = candidates.map(p => ({
+    participant: p,
+    willingness: computeSpeakingWillingness(p, messages),
+  })).sort((a, b) => b.willingness - a.willingness);
+
+  // First pick: highest willingness
+  const first = scored[0].participant;
+  if (count === 1) return [first];
+
+  // Second pick: prioritize tension with first
+  const firstType = first.persona_card?.personality_type || '';
+  const highTensionTypes = TENSION_PAIRS[firstType] || [];
+
+  const secondCandidates = scored
+    .slice(1) // exclude first
+    .sort((a, b) => {
+      const aType = a.participant.persona_card?.personality_type || '';
+      const bType = b.participant.persona_card?.personality_type || '';
+      const aTension = highTensionTypes.includes(aType) ? 2 : 0;
+      const bTension = highTensionTypes.includes(bType) ? 2 : 0;
+      // Combine tension bonus with willingness
+      return (bTension + b.willingness) - (aTension + a.willingness);
+    });
+
+  const second = secondCandidates[0]?.participant;
+  return second ? [first, second] : [first];
+}
+
+/**
+ * Heuristic speech gate — compute how much a participant "wants" to speak (Insight 1).
+ * Returns 0-1 score. No LLM call — pure heuristics to avoid QPS issues.
+ */
+function computeSpeakingWillingness(participant: Participant, messages: Message[]): number {
+  const persona = participant.persona_card;
+  if (!persona) return 0.3;
+
+  let score = 0.5; // base
+
+  const recent = messages.slice(-6);
+  const lastMsg = messages[messages.length - 1];
+
+  // Was this person directly addressed or challenged?
+  if (lastMsg) {
+    const mentionsMe = lastMsg.content.includes(persona.name);
+    const challengesMe = mentionsMe && (
+      lastMsg.content.includes('但是') || lastMsg.content.includes('不对') ||
+      lastMsg.content.includes('？') || lastMsg.content.includes('?')
+    );
+    if (challengesMe) score += 0.4; // strong urge to respond
+    else if (mentionsMe) score += 0.25; // was addressed
+  }
+
+  // Did I speak recently? Suppress if yes
+  const myRecentMsgs = recent.filter(m => m.participant_id === participant.id);
+  if (myRecentMsgs.length >= 2) score -= 0.3; // spoke too much recently
+  else if (myRecentMsgs.length === 1) score -= 0.1;
+
+  // Aggressiveness drives willingness
+  score += (persona.aggressiveness - 0.5) * 0.3;
+
+  // Type-specific adjustments
+  if (persona.personality_type === 'dominant_leader') score += 0.15;
+  if (persona.personality_type === 'silent_observer') score -= 0.2;
+  if (persona.personality_type === 'analytical_challenger') {
+    // Wants to speak when someone makes a claim without evidence
+    const lastContent = lastMsg?.content || '';
+    if (lastContent.includes('应该') || lastContent.includes('一定') || lastContent.includes('肯定')) {
+      score += 0.2;
+    }
+  }
+  if (persona.personality_type === 'quant_thinker') {
+    // Wants to speak when numbers are mentioned or missing
+    const lastContent = lastMsg?.content || '';
+    if (/\d+%|\d+倍|ROI|成本|利润|数据/.test(lastContent)) {
+      score += 0.2;
+    }
+  }
+
+  // Haven't spoken at all yet? Slight boost
+  const totalMsgs = messages.filter(m => m.participant_id === participant.id).length;
+  if (totalMsgs === 0 && messages.length > 5) score += 0.15;
+
+  return Math.max(0, Math.min(1, score));
+}
+
 function hasSpecificTarget(instruction: string): boolean {
   return /回应|质疑|反驳|追问|支持|延伸|打断|cue|整合|纠正|说的|提到/.test(instruction);
 }
@@ -222,14 +332,14 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
   const aiParticipants = participants.filter(p => p.type === 'ai');
   if (aiParticipants.length === 0) return { responders: [] };
 
-  const recentSpeakers = new Set(messages.slice(-4).map(m => m.participant_id));
+  // Filter out very recent speakers, then use tension-based selection
+  const recentSpeakers = new Set(messages.slice(-3).map(m => m.participant_id));
   const candidates = aiParticipants.filter(p => !recentSpeakers.has(p.id));
   const pool = candidates.length > 0 ? candidates : aiParticipants;
 
   const count = Math.min(pool.length, messages.length < 5 ? 1 : 2);
-  const selected = pool.sort(() => Math.random() - 0.5).slice(0, count);
+  const selected = selectDiverseResponders(pool, count, messages);
 
-  const lastMessage = messages[messages.length - 1];
   const needsUserHook = countMessagesSinceLastHuman(messages) >= 4;
   const recentQs = messages.slice(-4).filter(m =>
     m.content.includes('？') || m.content.includes('?')
@@ -242,11 +352,10 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
       if (needsUserHook && i === selected.length - 1 && recentQs < 2) {
         instruction = instruction.replace(/\[表达判断\]|\[反驳追问\]|\[整合收尾\]/, '[提问推进]');
       }
-      const hookSuffix = '';
 
       return {
         participant_id: p.id,
-        instruction: instruction + hookSuffix,
+        instruction,
         delay_ms: 800 + Math.random() * 2000,
         is_interrupt: p.persona_card?.personality_type === 'dominant_leader' && Math.random() > 0.7,
       };
@@ -349,7 +458,9 @@ function buildPrompt(
       if (p.type === 'human') return `- ${p.display_name} (真人)`;
       const persona = p.persona_card;
       const msgCount = messages.filter(m => m.participant_id === p.id).length;
-      return `- ${p.display_name} [${p.id}] (${persona?.personality_type}, ${msgCount}次)`;
+      const willingness = computeSpeakingWillingness(p, messages);
+      const willingnessLabel = willingness > 0.7 ? '🔥想说' : willingness > 0.4 ? '—' : '😶克制';
+      return `- ${p.display_name} [${p.id}] (${persona?.personality_type}, ${msgCount}次, ${willingnessLabel})`;
     })
     .join('\n');
 
