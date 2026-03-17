@@ -217,8 +217,11 @@ export async function startSession(sessionId: string): Promise<{
   }
 
   // Generate AI self-introductions sequentially (QPS limit)
+  // KEY FIX: Each AI only sees the host welcome, NOT other AIs' intros.
+  // This prevents later intros from echoing earlier ones.
   const aiIntros: ({ participant: Participant; content: string; delay_ms: number } | null)[] = [];
   const aiParticipants = getAiParticipants(state);
+  const messagesBeforeIntros = [...state.messages]; // snapshot: only host welcome
 
   for (let i = 0; i < aiParticipants.length; i++) {
     const participant = aiParticipants[i];
@@ -226,12 +229,13 @@ export async function startSession(sessionId: string): Promise<{
 
     const lang = state.session.config.language;
     const instruction = lang === 'en'
-      ? `This is the self-introduction phase. Briefly introduce yourself: your name, education background, and relevant experience. Keep it to 2-3 sentences. Be natural and confident.`
-      : `这是自我介绍环节。请简要介绍你的名字、教育背景和相关经验。2-3句话，自然大方。`;
+      ? `This is the self-introduction phase. Briefly introduce yourself: your name, education background, and relevant experience. Keep it to 2-3 sentences. Be natural and confident. Do NOT reference or respond to other candidates' introductions.`
+      : `这是自我介绍环节。请简要介绍你的名字、教育背景和相关经验。2-3句话，自然大方。不要引用或回应其他候选人的自我介绍。`;
 
+    // Pass only the host welcome messages, not other AIs' intros
     const content = await generateParticipantResponse(
       participant.persona_card,
-      state.messages,
+      messagesBeforeIntros,
       'intro',
       instruction
     );

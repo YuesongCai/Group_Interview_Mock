@@ -2,6 +2,7 @@ import { llmComplete } from '@/lib/llm/gateway';
 import type {
   Message,
   Participant,
+  PersonaCard,
   SessionPhase,
   SessionConfig,
   Topic,
@@ -88,6 +89,13 @@ export async function getOrchestratorDecision(
     return { responders: [] };
   }
 
+  // === FORCED USER ECHO — architectural-level enforcement ===
+  // If the human spoke recently and no AI has responded to them, short-circuit normal flow.
+  const forcedEcho = shouldForceUserEcho(messages, participants);
+  if (forcedEcho) {
+    return forcedEcho;
+  }
+
   const userPrompt = buildPrompt(messages, participants, topic, config, currentPhase, elapsedMinutes);
 
   const response = await llmComplete(
@@ -125,6 +133,9 @@ export async function getOrchestratorDecision(
         r.instruction = `${speechType} ${r.instruction}`;
       }
 
+      // Enrich instruction with material package (CV + topic data + user insight)
+      r.instruction = buildInstructionWithMaterial(r.instruction, participant, topic, messages);
+
       return r;
     });
 
@@ -140,20 +151,6 @@ export async function getOrchestratorDecision(
         if (target) {
           last.instruction = `追问${target.participant_name}："${target.content.substring(0, 40)}"中的一个具体假设——这个成立吗？用你的背景来反驳或追问。不超过80字/4句。`;
         }
-      }
-    }
-
-    // User echo enforcement: if human's point was ignored, force first responder to address it
-    const lastHumanMsg = [...messages].reverse().find(m => m.participant_type === 'human');
-    if (lastHumanMsg && decision.responders.length > 0) {
-      const humanIdx = messages.indexOf(lastHumanMsg);
-      const msgsSinceHumanSpoke = messages.length - humanIdx - 1;
-      const humanEchoed = messages.slice(humanIdx + 1).some(m =>
-        m.participant_type === 'ai' && m.content.includes(lastHumanMsg.participant_name || '')
-      );
-      if (!humanEchoed && msgsSinceHumanSpoke >= 2 && msgsSinceHumanSpoke <= 6) {
-        const first = decision.responders[0];
-        first.instruction = `优先回应${lastHumanMsg.participant_name}的观点："${lastHumanMsg.content.substring(0, 50)}"——先接住用户的点再展开。` + first.instruction;
       }
     }
 
@@ -364,6 +361,8 @@ function buildFallbackDecision(messages: Message[], participants: Participant[])
     m.content.includes('？') || m.content.includes('?')
   ).length;
 
+  // Need topic for material packages — stored on the function signature via closure isn't available here,
+  // so fallback instructions won't have full material packages (acceptable tradeoff).
   return {
     responders: selected.map((p, i) => {
       let instruction = enhanceInstruction(messages, participants, p);
@@ -629,4 +628,237 @@ function getProgressNote(round: number): string {
   if (round <= 3) return '深化。用数据/案例/经验来解决具体分歧。';
   if (round <= 4) return '整合。综合前面的讨论，收拢方向。有人该做总结了。';
   return '收尾。必须有人做最终整合，不能还在发散。';
+}
+
+// ============================================================
+// === ARCHITECTURAL FIX 2: Instruction Material Packages ===
+// ============================================================
+
+/**
+ * Enrich an instruction with a "material package" — CV highlight, topic data, and user insight.
+ * This gives AI concrete ammunition to support their stance, not just direction.
+ */
+function buildInstructionWithMaterial(
+  baseInstruction: string,
+  participant: Participant,
+  topic: Topic,
+  messages: Message[]
+): string {
+  const persona = participant.persona_card;
+  if (!persona) return baseInstruction;
+
+  const parts: string[] = [baseInstruction];
+
+  // 1. Relevant CV highlight
+  const cvHighlight = getRelevantCVHighlight(persona, baseInstruction);
+  if (cvHighlight) {
+    parts.push(`【你的素材】你的经验："${cvHighlight}"——用这个来支撑你的观点。`);
+  }
+
+  // 2. Relevant topic data point
+  const topicData = getRelevantTopicData(topic, baseInstruction);
+  if (topicData) {
+    parts.push(`【数据弹药】${topicData}——引用这个数字来让你的发言有根据。`);
+  }
+
+  // 3. Recent human insight — what the user said that's worth building on
+  const humanInsight = getRecentHumanInsight(messages);
+  if (humanInsight) {
+    parts.push(`【用户观点】${humanInsight.name}说过："${humanInsight.content}"——如果相关，回应或延伸这个点。`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Find the most relevant CV highlight for the current instruction context.
+ */
+function getRelevantCVHighlight(persona: PersonaCard, instruction: string): string | null {
+  if (!persona.cv_highlights || persona.cv_highlights.length === 0) return null;
+
+  // Try to find a highlight that has content overlap with the instruction
+  for (const highlight of persona.cv_highlights) {
+    if (hasContentOverlap(highlight, instruction)) {
+      return highlight;
+    }
+  }
+
+  // Fallback: return the first highlight (most prominent)
+  return persona.cv_highlights[0] || null;
+}
+
+/**
+ * Extract a relevant data point from the topic material.
+ */
+function getRelevantTopicData(topic: Topic, instruction: string): string | null {
+  const source = [topic.background_material || '', topic.description || ''].join('\n');
+  // Match sentences containing numbers
+  const numberPattern = /[^。！？\n]*\d+[%％亿万元个家条倍年月天]+[^。！？\n]*/g;
+  const matches = source.match(numberPattern) || [];
+  const constraints = (topic.constraints || []).filter(c => /\d/.test(c));
+  const all = [...matches, ...constraints].map(s => s.trim()).filter(Boolean);
+
+  if (all.length === 0) return null;
+
+  // Try to find one relevant to the instruction
+  for (const data of all) {
+    if (hasContentOverlap(data, instruction)) {
+      return data;
+    }
+  }
+
+  // Fallback: return a random data point to ensure variety
+  return all[Math.floor(Math.random() * all.length)] || null;
+}
+
+/**
+ * Find the most recent substantive human message.
+ */
+function getRecentHumanInsight(messages: Message[]): { name: string; content: string } | null {
+  for (let i = messages.length - 1; i >= Math.max(0, messages.length - 10); i--) {
+    const msg = messages[i];
+    if (msg.participant_type === 'human' && msg.content.length > 10) {
+      return {
+        name: msg.participant_name || '用户',
+        content: msg.content.substring(0, 60),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Simple overlap detection — checks if two strings share meaningful keywords.
+ */
+function hasContentOverlap(a: string, b: string): boolean {
+  // Extract meaningful words (Chinese: 2+ char segments, skip common words)
+  const keywords = a.match(/[\u4e00-\u9fff]{2,}/g) || [];
+  const skipWords = new Set(['的', '了', '在', '是', '和', '有', '不', '这个', '那个', '可以', '需要', '但是', '如果', '因为', '所以', '认为', '觉得', '应该', '一个', '我们', '大家']);
+  const meaningful = keywords.filter(w => w.length >= 2 && !skipWords.has(w));
+  return meaningful.some(w => b.includes(w));
+}
+
+// ============================================================
+// === ARCHITECTURAL FIX 3: Forced User Echo at Selection Level ===
+// ============================================================
+
+/**
+ * Check if we need to force an AI response to the user's message.
+ * This short-circuits the normal orchestrator flow when the human's
+ * points have been ignored for too long.
+ *
+ * Returns a forced OrchestratorDecision, or null if no forcing needed.
+ */
+function shouldForceUserEcho(
+  messages: Message[],
+  participants: Participant[]
+): OrchestratorDecision | null {
+  // Find the last human message (non-host)
+  const lastHumanMsg = [...messages].reverse().find(m =>
+    m.participant_type === 'human'
+  );
+  if (!lastHumanMsg) return null;
+
+  const humanIdx = messages.indexOf(lastHumanMsg);
+  const msgsSince = messages.length - humanIdx - 1;
+
+  // Only force if user spoke 2-6 messages ago (not too old, not just now)
+  if (msgsSince < 2 || msgsSince > 6) return null;
+
+  // Check if ANY AI has substantively responded to the user
+  const aiResponsesAfter = messages.slice(humanIdx + 1).filter(m => {
+    if (m.participant_type !== 'ai') return false;
+    // Check if the AI's message references the user by name or echoes their content
+    const mentionsUser = m.content.includes(lastHumanMsg.participant_name || '');
+    const echoesContent = hasContentOverlap(m.content, lastHumanMsg.content);
+    return mentionsUser || echoesContent;
+  });
+
+  // If someone already responded, no forcing needed
+  if (aiResponsesAfter.length > 0) return null;
+
+  // Force a response! Select the best responder for user echo.
+  const aiParticipants = participants.filter(p => p.type === 'ai');
+  const responder = selectBestUserEchoResponder(aiParticipants, lastHumanMsg, messages);
+  if (!responder) return null;
+
+  const instruction = buildUserEchoInstruction(responder, lastHumanMsg);
+
+  return {
+    responders: [{
+      participant_id: responder.id,
+      instruction,
+      delay_ms: 1000 + Math.random() * 1500,
+      is_interrupt: false,
+    }],
+  };
+}
+
+/**
+ * Select the AI participant best suited to respond to the user's message.
+ * Priorities: tension with user's stance > hasn't spoken recently > personality fit.
+ */
+function selectBestUserEchoResponder(
+  aiParticipants: Participant[],
+  humanMsg: Message,
+  messages: Message[]
+): Participant | null {
+  if (aiParticipants.length === 0) return null;
+
+  // Filter out very recent speakers
+  const recentSpeakers = new Set(messages.slice(-2).map(m => m.participant_id));
+  const candidates = aiParticipants.filter(p => !recentSpeakers.has(p.id));
+  const pool = candidates.length > 0 ? candidates : aiParticipants;
+
+  // Score each candidate for user-echo suitability
+  const scored = pool.map(p => {
+    let score = 0;
+    const persona = p.persona_card;
+    if (!persona) return { participant: p, score: 0 };
+
+    // Prefer challengers/analysts for richer interaction
+    if (persona.personality_type === 'analytical_challenger') score += 2;
+    if (persona.personality_type === 'industry_insider') score += 1.5;
+    if (persona.personality_type === 'quant_thinker') score += 1;
+
+    // CV overlap with user's topic = can engage substantively
+    if (persona.cv_highlights?.some(h => hasContentOverlap(h, humanMsg.content))) {
+      score += 2;
+    }
+
+    // Haven't spoken much = give them a chance
+    const totalMsgs = messages.filter(m => m.participant_id === p.id).length;
+    if (totalMsgs <= 2) score += 1;
+
+    return { participant: p, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.participant || pool[0];
+}
+
+/**
+ * Build a specific instruction for forced user-echo response.
+ */
+function buildUserEchoInstruction(
+  responder: Participant,
+  humanMsg: Message
+): string {
+  const archetype = responder.persona_card?.personality_type || '';
+  const speechType = getSpeechTypeForArchetype(archetype);
+  const userName = humanMsg.participant_name || '用户';
+  const userContent = humanMsg.content.substring(0, 60);
+
+  switch (archetype) {
+    case 'analytical_challenger':
+      return `${speechType} 直接回应${userName}说的"${userContent}"——追问一个关键假设，然后给出你的替代判断。不超过80字/4句。`;
+    case 'industry_insider':
+      return `${speechType} 用你的行业经验回应${userName}的观点"${userContent}"——验证或纠正，给出具体结论。不超过80字/4句。`;
+    case 'quant_thinker':
+      return `${speechType} 对${userName}说的"${userContent}"做量化拆解——给出你的数据判断。不超过80字/4句。`;
+    case 'strategic_integrator':
+      return `[整合收尾] 整合${userName}的观点"${userContent}"和前面讨论的方向——给出你的综合判断。不超过80字/4句。`;
+    default:
+      return `${speechType} 回应${userName}的观点"${userContent}"——先接住这个点，然后加入你自己的判断。不超过80字/4句。`;
+  }
 }
