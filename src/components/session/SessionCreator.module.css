@@ -1,26 +1,31 @@
 .creator {
-  max-width: 680px;
+  max-width: 640px;
   margin: 0 auto;
-  padding: 48px 24px;
+  padding: 56px 24px 80px;
+  position: relative;
+  z-index: 1;
 }
 
 .title {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 8px;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
 }
 
 .subtitle {
   font-size: 15px;
   color: var(--text-secondary);
-  margin-bottom: 36px;
+  margin-bottom: 40px;
+  line-height: 1.6;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 
 .field {
@@ -30,35 +35,41 @@
 }
 
 .label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .required {
-  color: var(--danger);
+  color: var(--accent);
+  font-weight: 400;
 }
 
 .optional {
   color: var(--text-muted);
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .textarea {
   width: 100%;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.6;
   resize: vertical;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-normal) ease, box-shadow var(--duration-normal) ease;
 }
 
 .textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
   outline: none;
 }
 
@@ -73,9 +84,10 @@
 
 .segmentedControl {
   display: flex;
-  border: 1px solid var(--border);
+  background: var(--bg-secondary);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  padding: 3px;
+  gap: 2px;
 }
 
 .segment {
@@ -83,35 +95,35 @@
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-card);
+  color: var(--text-muted);
+  background: transparent;
   border: none;
-  border-right: 1px solid var(--border);
-  transition: all 0.2s;
-}
-
-.segment:last-child {
-  border-right: none;
+  border-radius: 6px;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .segment:hover {
+  color: var(--text-secondary);
   background: var(--bg-hover);
 }
 
 .activeSegment {
   background: var(--accent);
-  color: white;
+  color: var(--text-inverse);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
 .activeSegment:hover {
   background: var(--accent-hover);
+  color: var(--text-inverse);
 }
 
 .error {
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--danger-muted);
+  border: 1px solid rgba(248, 113, 113, 0.2);
   color: var(--danger);
   font-size: 14px;
 }
@@ -121,14 +133,15 @@
   padding: 10px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 14px;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-normal) ease, box-shadow var(--duration-normal) ease;
 }
 
 .input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
   outline: none;
 }
 
@@ -149,49 +162,55 @@
 }
 
 .card {
-  padding: 12px;
-  border-radius: var(--radius-sm);
+  padding: 14px 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-secondary);
   cursor: pointer;
   text-align: center;
-  transition: all 0.2s;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .card:hover {
-  border-color: var(--accent);
+  border-color: var(--border-strong);
   background: var(--bg-hover);
+  transform: translateY(-1px);
 }
 
 .activeCard {
   border-color: var(--accent);
   background: var(--accent-muted);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-glow);
 }
 
 .cardLabel {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .cardDesc {
   font-size: 12px;
   color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .flowPreview {
   padding: 16px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-secondary);
 }
 
 .flowTitle {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
   margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .flowSteps {
@@ -205,7 +224,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 20px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -224,13 +243,15 @@
 
 .flowArrow {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .submitBtn {
   width: 100%;
-  padding: 14px;
-  font-size: 16px;
+  padding: 16px;
+  font-size: 15px;
   font-weight: 600;
-  margin-top: 8px;
+  margin-top: 12px;
+  border-radius: var(--radius);
+  letter-spacing: 0.01em;
 }

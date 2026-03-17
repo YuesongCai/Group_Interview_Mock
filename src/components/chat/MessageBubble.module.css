@@ -1,8 +1,14 @@
 .message {
   display: flex;
-  gap: 12px;
-  padding: 8px 0;
-  max-width: 85%;
+  gap: 10px;
+  padding: 6px 0;
+  max-width: 82%;
+  animation: fadeIn 0.25s var(--ease-out);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .userMessage {
@@ -16,17 +22,17 @@
 
 .hostMessage {
   margin-right: auto;
-  max-width: 90%;
+  max-width: 88%;
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: white;
   flex-shrink: 0;
@@ -34,18 +40,18 @@
 
 .avatarClickable {
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
 .avatarClickable:hover {
-  transform: scale(1.1);
-  box-shadow: 0 0 0 2px var(--accent);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-glow);
 }
 
 .bubbleWrapper {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .nameRow {
@@ -59,37 +65,44 @@
 }
 
 .name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.time {
-  font-size: 11px;
   color: var(--text-muted);
 }
 
+.time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 .hostBadge {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(34, 197, 94, 0.15);
+  background: var(--success-muted);
   color: var(--success);
   font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .interruptBadge {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--warning-muted);
   color: var(--warning);
+  letter-spacing: 0.03em;
 }
 
 .bubble {
   padding: 10px 14px;
-  border-radius: 12px;
-  line-height: 1.6;
+  border-radius: var(--radius);
+  line-height: 1.65;
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -97,7 +110,7 @@
 
 .userBubble {
   background: var(--accent);
-  color: white;
+  color: var(--text-inverse);
   border-bottom-right-radius: 4px;
 }
 
@@ -109,13 +122,13 @@
 }
 
 .hostBubble {
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: var(--success-muted);
+  border: 1px solid rgba(52, 211, 153, 0.15);
   color: var(--text-primary);
   border-bottom-left-radius: 4px;
 }
 
-/* Thought bubble toggle — small icon inside AI message bubble */
+/* Thought bubble toggle */
 .thoughtToggle {
   display: inline-flex;
   align-items: center;
@@ -123,51 +136,53 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   padding: 0 0 0 6px;
-  opacity: 0.35;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  opacity: 0.3;
+  transition: opacity var(--duration-fast) ease, transform var(--duration-fast) ease;
   vertical-align: middle;
   line-height: 1;
 }
 
 .thoughtToggle:hover {
-  opacity: 0.9;
-  transform: scale(1.2);
+  opacity: 0.85;
+  transform: scale(1.15);
 }
 
-/* Thought bubble — revealed inner monologue */
+/* Thought bubble — inner monologue */
 .thoughtBubble {
   position: relative;
   margin-top: 4px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-secondary);
-  background: rgba(139, 92, 246, 0.08);
-  border: 1px dashed rgba(139, 92, 246, 0.25);
-  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.06);
+  border: 1px dashed rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-sm);
   font-style: italic;
-  animation: thoughtReveal 0.3s ease;
+  animation: thoughtReveal 0.3s var(--ease-out);
 }
 
 .thoughtLabel {
   display: inline-block;
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
   font-weight: 600;
   color: rgba(139, 92, 246, 0.7);
-  background: rgba(139, 92, 246, 0.12);
-  padding: 1px 5px;
+  background: rgba(139, 92, 246, 0.1);
+  padding: 1px 6px;
   border-radius: 3px;
   margin-right: 6px;
   font-style: normal;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 @keyframes thoughtReveal {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.95);
+    transform: translateY(-3px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -178,17 +193,18 @@
 .systemMessage {
   display: flex;
   justify-content: center;
-  padding: 12px 0;
+  padding: 10px 0;
 }
 
 .systemContent {
   background: var(--accent-muted);
-  color: var(--accent-hover);
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
+  color: var(--accent);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   text-align: center;
   max-width: 80%;
   white-space: pre-wrap;
-  line-height: 1.8;
+  line-height: 1.6;
 }

@@ -1,7 +1,8 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,39 +16,41 @@
 }
 
 .modal {
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   padding: 28px;
   max-width: 420px;
   width: 90%;
   position: relative;
-  animation: slideUp 0.2s ease;
+  animation: slideUp 0.25s var(--ease-out);
   max-height: 80vh;
   overflow-y: auto;
+  box-shadow: var(--shadow-lg);
 }
 
 @keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
+  from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
 .closeBtn {
   position: absolute;
-  top: 12px;
+  top: 14px;
   right: 16px;
   background: none;
   border: none;
-  font-size: 22px;
+  font-size: 20px;
   color: var(--text-muted);
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: all var(--duration-fast) ease;
 }
 
 .closeBtn:hover {
   color: var(--text-primary);
-  background: var(--bg-secondary);
+  background: var(--bg-hover);
 }
 
 .header {
@@ -60,7 +63,7 @@
 .avatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,28 +78,33 @@
   font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 4px 0;
+  letter-spacing: -0.01em;
 }
 
 .typeBadge {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   padding: 2px 8px;
   border-radius: 4px;
   background: var(--accent-muted);
   color: var(--accent);
   font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .section {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .sectionTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
 }
 
 .sectionContent {
@@ -107,9 +115,9 @@
 }
 
 .aggBar {
-  height: 8px;
-  background: var(--bg-secondary);
-  border-radius: 4px;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
   overflow: hidden;
   margin-top: 6px;
   margin-bottom: 4px;
@@ -118,12 +126,13 @@
 .aggFill {
   height: 100%;
   background: var(--accent);
-  border-radius: 4px;
-  transition: width 0.3s ease;
+  border-radius: 3px;
+  transition: width 0.4s var(--ease-out);
 }
 
 .aggLabel {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -135,20 +144,24 @@
 
 .highlightList li {
   margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .tagList {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
   color: var(--text-secondary);
   white-space: nowrap;
 }

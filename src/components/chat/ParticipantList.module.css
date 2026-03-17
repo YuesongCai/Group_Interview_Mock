@@ -1,25 +1,26 @@
 .container {
-  padding: 20px;
+  padding: 16px;
   border-left: 1px solid var(--border);
   background: var(--bg-secondary);
-  min-width: 260px;
-  max-width: 280px;
+  min-width: 250px;
+  max-width: 270px;
   overflow-y: auto;
 }
 
 .title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
   margin-bottom: 16px;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .participant {
@@ -31,11 +32,11 @@
 .avatar {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: white;
   flex-shrink: 0;
@@ -47,7 +48,7 @@
 }
 
 .name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
   display: flex;
@@ -56,16 +57,19 @@
 }
 
 .youBadge {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--accent-muted);
   color: var(--accent);
   font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .background {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 2px;
   line-height: 1.4;
@@ -77,25 +81,28 @@
 
 .clickable {
   cursor: pointer;
-  border-radius: 8px;
-  padding: 6px;
-  margin: -6px;
-  transition: background 0.15s ease;
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin: -8px;
+  transition: background var(--duration-fast) ease;
 }
 
 .clickable:hover {
-  background: var(--bg-primary);
+  background: var(--bg-hover);
 }
 
 .viewBadge {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--accent-muted);
   color: var(--text-muted);
   font-weight: 400;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--duration-fast) ease;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .clickable:hover .viewBadge {
@@ -103,16 +110,26 @@
 }
 
 .hostBadge {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+  background: var(--success-muted);
+  color: var(--success);
   font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .typing {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--accent);
-  margin-top: 4px;
+  margin-top: 3px;
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
